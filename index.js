@@ -12,7 +12,17 @@ const GENRE = { griffe: 'griffes', morsure: 'morsure', charge: 'charge', fouet: 
 const STATUS = { 'brûlure': { tick: 1 / 16, verb: 'brûle', turns: 4, on: n => `${n} prend feu !` },
   poison: { tick: 1 / 10, verb: 'empoisonne', turns: 5, on: n => `Le poison atteint ${n} !` },
   gel: { verb: 'gèle', turns: 3, on: n => `La glace saisit ${n} !` },
-  paralysie: { verb: 'paralyse', turns: 4, on: n => `La paralysie frappe ${n} !` } };
+  paralysie: { verb: 'paralyse', turns: 4, on: n => `La paralysie frappe ${n} !` },
+  saignement: { tick: 1 / 12, verb: 'fait saigner', turns: 4, on: n => `${n} saigne !` },
+  sommeil: { verb: 'endort', turns: () => 1 + Math.floor(Math.random() * 3), on: n => `${n} s'endort…` },
+  confusion: { verb: 'embrouille', turns: () => 2 + Math.floor(Math.random() * 3), on: n => `${n} ne sait plus où il en est !` },
+  'éblouissement': { verb: 'éblouit', turns: 3, on: n => `${n} est ébloui !` },
+  peur: { verb: 'effraie', flinch: true } };  // peur : la cible perd son action si elle n'a pas encore joué
+// crans de statistiques (-3..+3) : attaque, défense, vitesse, précision
+const STAGE = s => s >= 0 ? 1 + .25 * s : 1 / (1 - .25 * s);
+const stage = (F, k) => STAGE(F.st?.[k] || 0);
+const STAT_SHORT = { attaque: 'atq', defense: 'déf', vitesse: 'vit', precision: 'pré' };
+const STAT_FR = { attaque: "L'attaque", defense: 'La défense', vitesse: 'La vitesse', precision: 'La précision' };
 const reach = mv => mv.portee || (['onde', 'explosion'].includes(mv.genre) ? 'zone' : ['projectile', 'souffle', 'rayon'].includes(mv.genre) ? 'distance' : 'contact');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -35,12 +45,15 @@ function effect(move, target) {  // multiplicateur d'élément contre la créatu
   if (target.card.resistances.includes(move.element)) return .67;
   return 1;
 }
-const atkOf = F => F.card.stats.attaque * (1 + .3 * (F.boost || 0)) * (F.status?.nom === 'brûlure' ? .75 : 1);
-const speedOf = F => F.card.stats.vitesse * (F.status?.nom === 'paralysie' ? .5 : 1);
+const atkOf = F => F.card.stats.attaque * stage(F, 'attaque') * (F.status?.nom === 'brûlure' ? .75 : 1);
+const defOf = F => F.card.stats.defense * stage(F, 'defense');
+const speedOf = F => F.card.stats.vitesse * stage(F, 'vitesse') * (F.status?.nom === 'paralysie' ? .5 : 1);
+// chance de toucher (0..1) : précision de l'attaque, crans de précision, éblouissement
+const hitChance = (F, mv) => Math.min(1, (mv.precision || 100) / 100 * stage(F, 'precision') * (F.status?.nom === 'éblouissement' ? 2 / 3 : 1));
 function damage(att, move, def, roll = Math.random(), critRoll = Math.random()) {
   const stab = move.element === att.type ? 1.2 : 1;
-  const crit = critRoll < 1 / 16 ? 1.5 : 1;
-  const base = move.puissance * (atkOf(att) / Math.max(1, def.card.stats.defense)) * .45;
+  const crit = critRoll < (move.critique || 1) / 16 ? 1.5 : 1;
+  const base = move.puissance * (atkOf(att) / Math.max(1, defOf(def))) * .45;
   const dmg = Math.max(1, Math.round(base * stab * effect(move, def) * (.9 + .15 * roll) * crit * (def.guard ? .5 : 1)));
   return { dmg, crit: crit > 1, eff: effect(move, def) };
 }
@@ -48,13 +61,16 @@ function cpuChoice(me, foe, rnd = Math.random) {  // l'ordinateur : le coup le p
   const moves = me.card.attaques, find = g => moves.findIndex(a => a.genre === g);
   if (find('soin') >= 0 && me.hp < me.max * .45 && rnd() < .5) return find('soin');
   if (me.hp < me.max * .3 && rnd() < .3) return 'garde';
-  if (find('renfort') >= 0 && (me.boost || 0) < 2 && me.hp > me.max * .6 && rnd() < .3) return find('renfort');
+  if (find('renfort') >= 0 && (me.st?.attaque || 0) + (me.st?.defense || 0) < 3 && me.hp > me.max * .6 && rnd() < .3) return find('renfort');
   const hits = moves.map((a, i) => i).filter(i => !moves[i].effet);
+  if (!hits.length) return 'garde';
   if (rnd() < .15) return hits[Math.floor(rnd() * hits.length)];
   let best = hits[0], score = -1;
   hits.forEach(i => {
     const a = moves[i], st = a.statut && !foe.status ? a.statut.chance / 100 * 8 : 0;  // un statut vaut quelques dégâts
-    const s = damage(me, a, { ...foe, guard: false }, .5, 1).dmg + st;
+    const fx = (a.effets || []).reduce((v, e) => v + e.chance / 100 * 3, 0) + (a.drain && me.hp < me.max * .6 ? 4 : 0);
+    const hits = a.coups ? (a.coups[0] + a.coups[1]) / 2 : 1;
+    const s = damage(me, a, { ...foe, guard: false }, .5, 1).dmg * hits * hitChance(me, a) + st + fx;
     if (s > score) { score = s; best = i; }
   });
   return best;
@@ -155,7 +171,7 @@ export default async function (ctx) {
   // ---------------------------------------------------------------- combattants
   function fighter(m, f, side) {
     const card = f.combat, max = hpMax(card);
-    return { m, f, card, side, type: typeOf(m, f), name: f.nom, hp: max, max, show: max, guard: false, status: null, boost: 0,
+    return { m, f, card, side, type: typeOf(m, f), name: f.nom, hp: max, max, show: max, guard: false, status: null, st: {},
       x: side ? W + 40 : -40, home: side ? 248 : 72, dir: side ? 'gauche' : 'droite', anim: { name: 'attente', t0: 0 }, fx: null, alpha: 1 };
   }
   const row = (F, d) => F.m.directions.indexOf(d || F.dir);
@@ -276,7 +292,8 @@ export default async function (ctx) {
     spawnWalker();
   }
 
-  const moveInfo = a => a.effet?.soin ? `soin ${a.effet.soin} %` : a.effet?.attaque ? `attaque +${a.effet.attaque} %`
+  const moveInfo = a => a.effet_texte ? (a.puissance ? `${a.puissance} · ` : '') + a.effet_texte  // fiches du Studio 1.4+
+    : a.effet?.soin ? `soin ${a.effet.soin} %` : a.effet?.attaque ? 'attaque +1'
     : `${a.puissance}${a.statut ? ` · ${STATUS[a.statut.nom]?.verb || a.statut.nom} ${a.statut.chance} %` : ''}`;
   function cardHtml(m, f) {
     const k = f.combat, r = RAR.indexOf(k.rarete), chips = (l, cls) => l.map(t => `<span class="ar-chip ${cls}">${esc(t)}</span>`).join(' ') || '—';
@@ -324,7 +341,7 @@ export default async function (ctx) {
   // ---------------------------------------------------------------- combat
   function hud() {
     const [a, b] = S.fighters, bar = (F, i) => `<div class="ar-hp ${i ? 'right' : ''}">
-      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span><span class="ar-chip">${esc(F.type)}</span>${F.status ? `<span class="ar-chip bad">${esc(F.status.nom)}</span>` : ''}${F.boost ? `<span class="ar-chip good">atq +${30 * F.boost} %</span>` : ''}</div>
+      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span><span class="ar-chip">${esc(F.type)}</span>${F.status ? `<span class="ar-chip bad">${esc(F.status.nom)}</span>` : ''}${Object.entries(F.st).filter(([, v]) => v).map(([k, v]) => `<span class="ar-chip ${v > 0 ? 'good' : 'bad'}">${STAT_SHORT[k]} ${v > 0 ? '+' : ''}${v}</span>`).join('')}</div>
       <i><b class="${F.show / F.max < .25 ? 'low' : F.show / F.max < .5 ? 'mid' : ''}" style="width:${Math.max(0, F.show / F.max * 100)}%"></b></i>
       <em>${Math.max(0, Math.ceil(F.show))} / ${F.max}</em></div>`;
     $('#hud').innerHTML = bar(a, 0) + bar(b, 1);
@@ -380,14 +397,18 @@ export default async function (ctx) {
       const cb = S.mode === 'duel' ? await chooseAction(b, `Joueur 2 · ${b.name}`) : cpuChoice(b, a);
       if (S.screen !== 'battle') return;
       a.guard = ca === 'garde'; b.guard = cb === 'garde';
-      const sa = speedOf(a), sb = speedOf(b);
+      const pri = (F, act) => F.card.attaques[act]?.priorite || 0;  // une rafale part avant tout le reste
+      const sa = speedOf(a) + 1000 * pri(a, ca), sb = speedOf(b) + 1000 * pri(b, cb);
       const order = sa > sb || (sa === sb && Math.random() < .5) ? [[a, ca, b], [b, cb, a]] : [[b, cb, a], [a, ca, b]];
+      a.acted = b.acted = a.flinch = b.flinch = false;
       for (const [F, act, T] of order) {
         if (F.hp <= 0 || T.hp <= 0) continue;
-        if (await blocked(F)) continue;
+        F.acted = true;
+        if (await blocked(F)) { if (F.hp <= 0) { await knockOut(F, T); return; } continue; }
         if (act === 'garde') { say(`${F.name} se met en garde.`); await sleep(650); continue; }
         await attack(F, act, T);
         if (T.hp <= 0) { await knockOut(T, F); return; }
+        if (F.hp <= 0) { await knockOut(F, T); return; }  // le contrecoup
       }
       a.guard = b.guard = false;
       for (const [F, O] of [[a, b], [b, a]]) {  // fin du tour : brûlure et poison rongent les PV
@@ -397,9 +418,22 @@ export default async function (ctx) {
       }
     }
   }
-  async function blocked(F) {  // gel et paralysie : le tour peut sauter
+  async function blocked(F) {  // peur, gel, sommeil, paralysie, confusion : le tour peut sauter
+    if (F.flinch) { say(`${F.name} recule de peur et n'attaque pas !`); await sleep(750); return true; }
     const st = F.status;
     if (!st) return false;
+    if (st.nom === 'sommeil') { say(`${F.name} dort profondément.`); await sleep(750); return true; }
+    if (st.nom === 'confusion' && Math.random() < 1 / 3) {
+      const d = damage(F, { puissance: 40, element: '' }, { ...F, guard: false }, .5, 1).dmg;
+      F.hp = Math.max(0, F.hp - d);
+      play(F, 'degats');
+      pop(F.x - 8, GROUND - 76, '-' + d, 'weak');
+      say(`${F.name}, confus, se blesse tout seul (-${d} PV) !`);
+      await drain(F, F.hp);
+      await sleep(600);
+      if (F.hp > 0) play(F, 'attente');
+      return true;
+    }
     if (st.nom === 'gel') {
       if (Math.random() < .3 || st.turns <= 0) { F.status = null; hud(); say(`La glace qui retenait ${F.name} fond !`); await sleep(650); return false; }
       st.turns--; say(`${F.name}, pris dans la glace, ne peut pas bouger.`); await sleep(750); return true;
@@ -419,21 +453,39 @@ export default async function (ctx) {
       await drain(F, F.hp);
       await sleep(350);
     }
-    if (--st.turns <= 0 && F.hp > 0) { F.status = null; hud(); say(`${F.name} se remet de la ${st.nom === 'poison' ? 'morsure du poison' : st.nom}.`); await sleep(500); }
+    const back = { sommeil: `${F.name} se réveille !`, confusion: `${F.name} retrouve ses esprits.`,
+      'éblouissement': `${F.name} y voit de nouveau clair.`, saignement: `La plaie de ${F.name} se referme.`,
+      poison: `${F.name} se remet de la morsure du poison.` }[st.nom] || `${F.name} se remet de la ${st.nom}.`;
+    if (--st.turns <= 0 && F.hp > 0) { F.status = null; hud(); say(back); await sleep(500); }
     return F.hp <= 0;
   }
-  async function support(F, mv) {  // soin ou renfort : sur elle-même
-    if (mv.effet.soin) {
-      const before = F.hp;
-      F.hp = Math.min(F.max, F.hp + Math.round(F.max * mv.effet.soin / 100));
-      pop(F.x - 8, GROUND - 76, '+' + (F.hp - before), 'good');
-      say(F.hp > before ? `${F.name} récupère ${F.hp - before} PV.` : `${F.name} est déjà en pleine forme.`);
-      await drain(F, F.hp);
-    } else {
-      if (F.boost < 2) { F.boost++; say(`L'attaque de ${F.name} augmente !`); } else say(`L'attaque de ${F.name} ne peut plus monter.`);
-      hud();
-      await sleep(400);
+  async function heal(F, pct) {
+    const before = F.hp;
+    F.hp = Math.min(F.max, F.hp + Math.round(F.max * pct / 100));
+    pop(F.x - 8, GROUND - 76, '+' + (F.hp - before), 'good');
+    say(F.hp > before ? `${F.name} récupère ${F.hp - before} PV.` : `${F.name} est déjà en pleine forme.`);
+    await drain(F, F.hp);
+  }
+  async function raise(F, k, n) {  // un cran de statistique, de -3 à +3
+    const was = F.st[k] || 0, now = Math.max(-3, Math.min(3, was + n));
+    F.st[k] = now;
+    hud();
+    say(now === was ? `${STAT_FR[k]} de ${F.name} ne peut plus ${n > 0 ? 'monter' : 'baisser'}.`
+      : `${STAT_FR[k]} de ${F.name} ${n > 0 ? 'augmente' : 'baisse'}${Math.abs(now - was) > 1 ? ' beaucoup' : ''} !`);
+    await sleep(550);
+  }
+  async function effects(F, mv, T, self) {  // baisses et hausses de statistiques, chacune avec sa chance
+    for (const e of mv.effets || []) {
+      if ((e.cible === 'soi') !== self || (!self && T.hp <= 0)) continue;
+      if (Math.random() * 100 < e.chance) await raise(self ? F : T, e.stat, e.niveaux);
     }
+  }
+  async function support(F, mv) {  // soin ou renfort : sur elle-même
+    const pct = mv.soin ?? mv.effet?.soin;
+    if (pct) await heal(F, pct);
+    if (mv.purge && F.status) { say(`${F.name} n'est plus sous l'effet de ${F.status.nom}.`); F.status = null; hud(); await sleep(500); }
+    if (mv.effets) await effects(F, mv, F, true);
+    else if (mv.genre === 'renfort') await raise(F, 'attaque', 1);  // ancienne fiche : renfort = attaque
   }
   async function attack(F, n, T) {
     const mv = F.card.attaques[n], anim = F.f.attaques[n], name = 'attaque' + (n + 1), kind = reach(mv);
@@ -469,23 +521,52 @@ export default async function (ctx) {
     await sleep(250);
   }
   async function hit(F, mv, T) {
-    const r = damage(F, mv, T);
-    T.hp = Math.max(0, T.hp - r.dmg);
-    play(T, 'degats');
-    S.shake = performance.now() + (r.crit || r.eff > 1 ? 320 : 180);
-    pop(T.x - 8, GROUND - 76, '-' + r.dmg, r.crit ? 'crit' : r.eff > 1 ? 'good' : r.eff < 1 ? 'weak' : '');
-    if (r.crit) pop(T.x - 18, GROUND - 92, 'Coup critique !', 'crit');
-    const words = r.eff > 1 ? ' C\'est très efficace !' : r.eff < 1 ? ' Ce n\'est pas très efficace…' : '';
-    say(`${mv.nom} inflige ${r.dmg} dégâts${T.guard ? ' (garde)' : ''}.${words}`);
-    await drain(T, T.hp);
-    if (mv.statut && !T.status && T.hp > 0 && Math.random() * 100 < mv.statut.chance) {
-      const rule = STATUS[mv.statut.nom] || { turns: 3 };
-      T.status = { nom: mv.statut.nom, turns: rule.turns };
-      hud();
-      await sleep(500);
-      say(rule.on ? rule.on(T.name) : `${T.name} subit ${mv.statut.nom} !`);
-      await sleep(600);
+    if (Math.random() > hitChance(F, mv)) { say(`${T.name} esquive ${mv.nom} !`); pop(T.x - 14, GROUND - 76, 'raté', 'weak'); await sleep(650); return; }
+    const n = mv.coups ? mv.coups[0] + Math.floor(Math.random() * (mv.coups[1] - mv.coups[0] + 1)) : 1;
+    let total = 0, r;
+    for (let i = 0; i < n && T.hp > 0; i++) {  // coups multiples : chacun peut être critique
+      r = damage(F, mv, T);
+      total += r.dmg;
+      T.hp = Math.max(0, T.hp - r.dmg);
+      play(T, 'degats');
+      S.shake = performance.now() + (r.crit || r.eff > 1 ? 320 : 180);
+      pop(T.x - 8 + 6 * i, GROUND - 76 - 8 * i, '-' + r.dmg, r.crit ? 'crit' : r.eff > 1 ? 'good' : r.eff < 1 ? 'weak' : '');
+      if (r.crit) pop(T.x - 18, GROUND - 92, 'Coup critique !', 'crit');
+      if (n > 1) await sleep(180);
     }
+    r.dmg = total;
+    const words = r.eff > 1 ? ' C\'est très efficace !' : r.eff < 1 ? ' Ce n\'est pas très efficace…' : '';
+    say(`${mv.nom} inflige ${r.dmg} dégâts${n > 1 ? ` en ${n} coups` : ''}${T.guard ? ' (garde)' : ''}.${words}`);
+    await drain(T, T.hp);
+    if (mv.drain && F.hp < F.max) {
+      const before = F.hp;
+      F.hp = Math.min(F.max, F.hp + Math.max(1, Math.round(total * mv.drain / 100)));
+      pop(F.x - 8, GROUND - 76, '+' + (F.hp - before), 'good');
+      say(`${F.name} absorbe ${F.hp - before} PV.`);
+      await drain(F, F.hp);
+    }
+    if (mv.recul) {
+      const d = Math.max(1, Math.round(total * mv.recul / 100));
+      F.hp = Math.max(0, F.hp - d);
+      pop(F.x - 8, GROUND - 76, '-' + d, 'weak');
+      say(`${F.name} subit le contrecoup (-${d} PV).`);
+      await drain(F, F.hp);
+    }
+    const rule = mv.statut && STATUS[mv.statut.nom] || { turns: 3 };
+    if (mv.statut && T.hp > 0 && Math.random() * 100 < mv.statut.chance) {
+      if (rule.flinch) {
+        if (!T.acted) { T.flinch = true; say(`${T.name} est effrayé !`); await sleep(500); }
+      } else if (!T.status) {
+        T.status = { nom: mv.statut.nom, turns: typeof rule.turns === 'function' ? rule.turns() : rule.turns };
+        hud();
+        await sleep(500);
+        say(rule.on ? rule.on(T.name) : `${T.name} subit ${mv.statut.nom} !`);
+        await sleep(600);
+        if (mv.statut.nom === 'saignement') await raise(T, 'defense', -1);
+      }
+    }
+    if (F.hp > 0) await effects(F, mv, T, true);
+    await effects(F, mv, T, false);
     setTimeout(() => { if (T.anim.name === 'degats' && T.hp > 0) play(T, 'attente'); }, animMs(T, 'degats'));
   }
   async function knockOut(T, winner) {
@@ -533,4 +614,4 @@ export default async function (ctx) {
   menu();
 }
 
-export const _test = { damage, effect, hpMax, cpuChoice, typeOf, reach, atkOf, speedOf, STATUS };
+export const _test = { damage, effect, hpMax, cpuChoice, typeOf, reach, atkOf, speedOf, STATUS, hitChance, STAGE };
