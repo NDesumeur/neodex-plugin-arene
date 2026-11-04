@@ -1,0 +1,9 @@
+{
+  "pluginId": "neobase.arene",
+  "repo": "NDesumeur/neobase-plugin-arene",
+  "version": "1.0.0",
+  "sha256": "ba982949974f06bcc36ecc3e6d132bb2df927954d61d0f0e212545586575ae17",
+  "approvedAt": "2026-11-04T01:25:49.664Z",
+  "neobase": ">=4.1.0",
+  "signature": "yWvAHEgY6NaCOas0nQhuL4Egl4GFjhsKA8zvJA/yDBZwaqAkf+IY2HWbygqS89aInTFxu7grpi4FaSEpyAghDg=="
+}
