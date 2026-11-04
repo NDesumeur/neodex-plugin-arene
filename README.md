@@ -6,7 +6,7 @@ Les créatures que tu as inventées dans **NeoBestiary Studio** s'affrontent au 
 
 - **Combat contre l'ordinateur** ou **duel à deux joueurs** sur le même ordinateur.
 - **Choix des créatures** : toutes celles du Studio qui ont une fiche de combat, et chacune de leurs variantes de couleur. Pour chacune : portrait de combat, rareté, statistiques, faiblesses, résistances et attaques. « Au hasard » tire une créature au sort.
-- **Combat** : les créatures entrent en marchant, puis chacune choisit sa 1re attaque, sa 2e ou la **garde** (moitié moins de dégâts au prochain coup). La plus rapide frappe la première. Les attaques au contact foncent sur l'adversaire, celles à distance lancent leur projectile à travers l'arène. Une attaque d'un élément auquel l'adversaire est faible fait 1,5 fois plus mal, et 1 coup sur 16 est critique.
+- **Combat** : les créatures entrent en marchant, puis chacune choisit une de ses attaques (2 à 4 selon sa rareté, touches 1 à 4) ou la **garde** (moitié moins de dégâts au prochain coup). La plus rapide frappe la première. Les attaques au contact foncent sur l'adversaire, celles à distance lancent leur projectile à travers l'arène, celles de zone éclatent autour de la créature. Le **soin** rend des PV, le **renfort** augmente l'attaque (deux fois au plus). Certaines attaques infligent un **statut** : brûlure (perd des PV à chaque tour et frappe moins fort), poison (perd des PV à chaque tour), gel (ne peut plus agir jusqu'à ce que la glace fonde) ou paralysie (deux fois plus lente, et parfois incapable d'agir). Une attaque d'un élément auquel l'adversaire est faible fait 1,5 fois plus mal, et 1 coup sur 16 est critique.
 - **Animations** : celles faites par le Studio (marche, attente, attaques avec leurs effets, dégâts, K.O.), avec la foule, les torches et l'écran qui tremble.
 - **Palmarès** : victoires et défaites de chaque créature et de chaque variante.
 
@@ -14,8 +14,8 @@ Raccourcis : touches **1**, **2** et **3** pour les actions, **Échap** pour rev
 
 ## Ce qu'il faut
 
-- **NeoBestiary Studio** 1.0.7 ou plus récent (installé avec l'Arène). Les créatures sont lues dans `Documents\NeoBestiary Studio\creatures`, sans jamais être modifiées.
-- Une créature apparaît dans l'Arène dès qu'elle a sa fiche de combat. Pour une créature faite avec une version plus ancienne du Studio, ouvre-la et clique « Réécrire la fiche ».
+- **NeoBestiary Studio** 1.1.0 ou plus récent (installé avec l'Arène). Les créatures sont lues dans `Documents\NeoBestiary Studio\creatures`, sans jamais être modifiées.
+- Une créature apparaît dans l'Arène dès qu'elle a sa fiche de combat. Pour une créature faite avec une version plus ancienne du Studio, ouvre-la et clique « Réécrire la fiche » : elle reçoit alors ses 2 à 4 attaques et sa rareté d'après son prestige.
 
 L'Arène n'a besoin ni de carte graphique ni d'Ollama : tout est déjà dessiné par le Studio.
 

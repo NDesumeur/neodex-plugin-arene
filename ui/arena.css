@@ -97,6 +97,8 @@
 .ar-act { flex: 1; min-height: 34px; align-items: flex-start; text-align: left; }
 .ar-act b { font-weight: normal; }
 .ar-act small { font-size: 11px; line-height: 12px; color: var(--parch2); }
+.ar-acts.many .ar-act { padding: 0 6px; font-size: 13px; line-height: 14px; }
+.ar-acts.many .ar-act small { font-size: 10px; line-height: 11px; }
 
 .ar-pop { position: absolute; font-size: 22px; color: var(--white); text-shadow: 2px 2px 0 var(--ink0); animation: ar-pop 1.1s steps(11) forwards; white-space: nowrap; }
 .ar-pop.good { color: var(--brass); } .ar-pop.weak { color: var(--parch3); } .ar-pop.crit { color: var(--red); font-size: 18px; }

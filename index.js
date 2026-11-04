@@ -4,7 +4,16 @@ const ID = 'neobase.arene', U = 'neoplugin://' + ID + '/';
 const W = 320, H = 180, GROUND = 124;
 const RAR = ['commun', 'peu commun', 'rare', 'épique', 'légendaire'];
 const ELEMENTS = ['feu', 'eau', 'plante', 'vent', 'roche', 'glace', 'foudre', 'lumière', 'ombre', 'esprit', 'acier', 'poison'];
-const GENRE = { griffe: 'griffes', morsure: 'morsure', charge: 'charge', projectile: 'projectile', souffle: 'souffle', onde: 'onde', rayon: 'rayon' };
+const GENRE = { griffe: 'griffes', morsure: 'morsure', charge: 'charge', fouet: 'fouet', corne: 'corne', dard: 'dard', etreinte: 'étreinte',
+  projectile: 'projectile', souffle: 'souffle', rayon: 'rayon', cri: 'cri', rafale: 'rafale', pluie: 'pluie', onde: 'onde',
+  explosion: 'explosion', soin: 'soin', renfort: 'renfort' };
+// statuts : brûlure (perd 1/16 des PV par tour, frappe moins fort), poison (1/10 par tour), gel (ne joue pas, peut
+// dégeler), paralysie (1 chance sur 4 de ne pas jouer, deux fois plus lente)
+const STATUS = { 'brûlure': { tick: 1 / 16, verb: 'brûle', turns: 4, on: n => `${n} prend feu !` },
+  poison: { tick: 1 / 10, verb: 'empoisonne', turns: 5, on: n => `Le poison atteint ${n} !` },
+  gel: { verb: 'gèle', turns: 3, on: n => `La glace saisit ${n} !` },
+  paralysie: { verb: 'paralyse', turns: 4, on: n => `La paralysie frappe ${n} !` } };
+const reach = mv => mv.portee || (['onde', 'explosion'].includes(mv.genre) ? 'zone' : ['projectile', 'souffle', 'rayon'].includes(mv.genre) ? 'distance' : 'contact');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -26,18 +35,28 @@ function effect(move, target) {  // multiplicateur d'élément contre la créatu
   if (target.card.resistances.includes(move.element)) return .67;
   return 1;
 }
+const atkOf = F => F.card.stats.attaque * (1 + .3 * (F.boost || 0)) * (F.status?.nom === 'brûlure' ? .75 : 1);
+const speedOf = F => F.card.stats.vitesse * (F.status?.nom === 'paralysie' ? .5 : 1);
 function damage(att, move, def, roll = Math.random(), critRoll = Math.random()) {
   const stab = move.element === att.type ? 1.2 : 1;
   const crit = critRoll < 1 / 16 ? 1.5 : 1;
-  const base = move.puissance * (att.card.stats.attaque / Math.max(1, def.card.stats.defense)) * .45;
+  const base = move.puissance * (atkOf(att) / Math.max(1, def.card.stats.defense)) * .45;
   const dmg = Math.max(1, Math.round(base * stab * effect(move, def) * (.9 + .15 * roll) * crit * (def.guard ? .5 : 1)));
   return { dmg, crit: crit > 1, eff: effect(move, def) };
 }
-function cpuChoice(me, foe) {  // l'ordinateur : le coup le plus fort en moyenne, parfois une garde quand il va mal
-  if (me.hp < me.max * .3 && Math.random() < .3) return 'garde';
-  if (Math.random() < .15) return Math.floor(Math.random() * me.card.attaques.length);
-  let best = 0, score = -1;
-  me.card.attaques.forEach((a, i) => { const s = damage(me, a, { ...foe, guard: false }, .5, 1).dmg; if (s > score) { score = s; best = i; } });
+function cpuChoice(me, foe, rnd = Math.random) {  // l'ordinateur : le coup le plus fort, un soin ou un renfort à propos
+  const moves = me.card.attaques, find = g => moves.findIndex(a => a.genre === g);
+  if (find('soin') >= 0 && me.hp < me.max * .45 && rnd() < .5) return find('soin');
+  if (me.hp < me.max * .3 && rnd() < .3) return 'garde';
+  if (find('renfort') >= 0 && (me.boost || 0) < 2 && me.hp > me.max * .6 && rnd() < .3) return find('renfort');
+  const hits = moves.map((a, i) => i).filter(i => !moves[i].effet);
+  if (rnd() < .15) return hits[Math.floor(rnd() * hits.length)];
+  let best = hits[0], score = -1;
+  hits.forEach(i => {
+    const a = moves[i], st = a.statut && !foe.status ? a.statut.chance / 100 * 8 : 0;  // un statut vaut quelques dégâts
+    const s = damage(me, a, { ...foe, guard: false }, .5, 1).dmg + st;
+    if (s > score) { score = s; best = i; }
+  });
   return best;
 }
 
@@ -136,7 +155,7 @@ export default async function (ctx) {
   // ---------------------------------------------------------------- combattants
   function fighter(m, f, side) {
     const card = f.combat, max = hpMax(card);
-    return { m, f, card, side, type: typeOf(m, f), name: f.nom, hp: max, max, show: max, guard: false,
+    return { m, f, card, side, type: typeOf(m, f), name: f.nom, hp: max, max, show: max, guard: false, status: null, boost: 0,
       x: side ? W + 40 : -40, home: side ? 248 : 72, dir: side ? 'gauche' : 'droite', anim: { name: 'attente', t0: 0 }, fx: null, alpha: 1 };
   }
   const row = (F, d) => F.m.directions.indexOf(d || F.dir);
@@ -257,6 +276,8 @@ export default async function (ctx) {
     spawnWalker();
   }
 
+  const moveInfo = a => a.effet?.soin ? `soin ${a.effet.soin} %` : a.effet?.attaque ? `attaque +${a.effet.attaque} %`
+    : `${a.puissance}${a.statut ? ` · ${STATUS[a.statut.nom]?.verb || a.statut.nom} ${a.statut.chance} %` : ''}`;
   function cardHtml(m, f) {
     const k = f.combat, r = RAR.indexOf(k.rarete), chips = (l, cls) => l.map(t => `<span class="ar-chip ${cls}">${esc(t)}</span>`).join(' ') || '—';
     return `<div class="ar-detail">
@@ -264,7 +285,7 @@ export default async function (ctx) {
       <div class="ar-stats">${[['pv', 'PV'], ['attaque', 'Attaque'], ['defense', 'Défense'], ['vitesse', 'Vitesse']].map(([s, l]) =>
         `<span>${l}</span><i><b style="width:${Math.min(100, k.stats[s])}%"></b></i><em>${k.stats[s]}</em>`).join('')}</div>
       <div class="ar-weak">Faible : ${chips(k.faiblesses, 'bad')}<br>Résiste : ${chips(k.resistances, 'good')}</div>
-      ${k.attaques.map((a, i) => `<div class="ar-move"><b>${i + 1}. ${esc(a.nom)}</b> <span class="ar-chip">${esc(a.element)}</span> <span class="ar-chip">${GENRE[a.genre] || esc(a.genre)}</span> <em>${a.puissance}</em></div>`).join('')}
+      ${k.attaques.map((a, i) => `<div class="ar-move"><b>${i + 1}. ${esc(a.nom)}</b> <span class="ar-chip">${esc(a.element)}</span> <span class="ar-chip">${GENRE[a.genre] || esc(a.genre)}</span> <em>${moveInfo(a)}</em></div>`).join('')}
     </div>`;
   }
 
@@ -303,7 +324,7 @@ export default async function (ctx) {
   // ---------------------------------------------------------------- combat
   function hud() {
     const [a, b] = S.fighters, bar = (F, i) => `<div class="ar-hp ${i ? 'right' : ''}">
-      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span><span class="ar-chip">${esc(F.type)}</span></div>
+      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span><span class="ar-chip">${esc(F.type)}</span>${F.status ? `<span class="ar-chip bad">${esc(F.status.nom)}</span>` : ''}${F.boost ? `<span class="ar-chip good">atq +${30 * F.boost} %</span>` : ''}</div>
       <i><b class="${F.show / F.max < .25 ? 'low' : F.show / F.max < .5 ? 'mid' : ''}" style="width:${Math.max(0, F.show / F.max * 100)}%"></b></i>
       <em>${Math.max(0, Math.ceil(F.show))} / ${F.max}</em></div>`;
     $('#hud').innerHTML = bar(a, 0) + bar(b, 1);
@@ -338,12 +359,14 @@ export default async function (ctx) {
     return new Promise(done => {
       const acts = $('#acts');
       say(label);
+      const n = F.card.attaques.length;
+      acts.classList.toggle('many', n > 2);
       acts.innerHTML = F.card.attaques.map((a, i) => {
-        const foe = S.fighters[1 - F.side], e = effect(a, foe);
-        return `<button class="ar-btn dark ar-act" data-a="${i}"><b>${i + 1}. ${esc(a.nom)}</b><small>${esc(a.element)} · ${GENRE[a.genre] || esc(a.genre)} · ${a.puissance}${e > 1 ? ' · efficace' : e < 1 ? ' · peu efficace' : ''}</small></button>`;
-      }).join('') + `<button class="ar-btn dark ar-act" data-a="garde"><b>3. Garde</b><small>moitié moins de dégâts</small></button>`;
+        const foe = S.fighters[1 - F.side], e = a.effet ? 1 : effect(a, foe);
+        return `<button class="ar-btn dark ar-act" data-a="${i}"><b>${i + 1}. ${esc(a.nom)}</b><small>${esc(a.element)} · ${GENRE[a.genre] || esc(a.genre)} · ${moveInfo(a)}${e > 1 ? ' · efficace' : e < 1 ? ' · peu efficace' : ''}</small></button>`;
+      }).join('') + `<button class="ar-btn dark ar-act" data-a="garde"><b>${n + 1}. Garde</b><small>moitié moins de dégâts</small></button>`;
       const pickIt = v => { acts.innerHTML = ''; view.removeEventListener('keydown', key); done(v); };
-      const key = e => { if (e.key === '1' || e.key === '2') pickIt(+e.key - 1); if (e.key === '3') pickIt('garde'); };
+      const key = e => { const k = +e.key; if (k >= 1 && k <= n) pickIt(k - 1); if (k === n + 1) pickIt('garde'); };
       view.addEventListener('keydown', key);
       $$('#acts [data-a]').forEach(b => b.onclick = () => pickIt(b.dataset.a === 'garde' ? 'garde' : +b.dataset.a));
       view.querySelector('.ar').focus();
@@ -357,22 +380,76 @@ export default async function (ctx) {
       const cb = S.mode === 'duel' ? await chooseAction(b, `Joueur 2 · ${b.name}`) : cpuChoice(b, a);
       if (S.screen !== 'battle') return;
       a.guard = ca === 'garde'; b.guard = cb === 'garde';
-      const sa = a.card.stats.vitesse, sb = b.card.stats.vitesse;
+      const sa = speedOf(a), sb = speedOf(b);
       const order = sa > sb || (sa === sb && Math.random() < .5) ? [[a, ca, b], [b, cb, a]] : [[b, cb, a], [a, ca, b]];
       for (const [F, act, T] of order) {
         if (F.hp <= 0 || T.hp <= 0) continue;
+        if (await blocked(F)) continue;
         if (act === 'garde') { say(`${F.name} se met en garde.`); await sleep(650); continue; }
         await attack(F, act, T);
         if (T.hp <= 0) { await knockOut(T, F); return; }
       }
       a.guard = b.guard = false;
+      for (const [F, O] of [[a, b], [b, a]]) {  // fin du tour : brûlure et poison rongent les PV
+        if (!(await tick(F))) continue;
+        await knockOut(F, O);
+        return;
+      }
+    }
+  }
+  async function blocked(F) {  // gel et paralysie : le tour peut sauter
+    const st = F.status;
+    if (!st) return false;
+    if (st.nom === 'gel') {
+      if (Math.random() < .3 || st.turns <= 0) { F.status = null; hud(); say(`La glace qui retenait ${F.name} fond !`); await sleep(650); return false; }
+      st.turns--; say(`${F.name}, pris dans la glace, ne peut pas bouger.`); await sleep(750); return true;
+    }
+    if (st.nom === 'paralysie' && Math.random() < .25) { say(`La paralysie empêche ${F.name} d'agir !`); await sleep(750); return true; }
+    return false;
+  }
+  async function tick(F) {  // rend vrai si la créature tombe K.O.
+    const st = F.status;
+    if (!st || F.hp <= 0) return false;
+    const rule = STATUS[st.nom] || {};
+    if (rule.tick) {
+      const d = Math.max(1, Math.round(F.max * rule.tick));
+      F.hp = Math.max(0, F.hp - d);
+      pop(F.x - 8, GROUND - 76, '-' + d, 'weak');
+      say(`${F.name} souffre de ${st.nom} (-${d} PV).`);
+      await drain(F, F.hp);
+      await sleep(350);
+    }
+    if (--st.turns <= 0 && F.hp > 0) { F.status = null; hud(); say(`${F.name} se remet de la ${st.nom === 'poison' ? 'morsure du poison' : st.nom}.`); await sleep(500); }
+    return F.hp <= 0;
+  }
+  async function support(F, mv) {  // soin ou renfort : sur elle-même
+    if (mv.effet.soin) {
+      const before = F.hp;
+      F.hp = Math.min(F.max, F.hp + Math.round(F.max * mv.effet.soin / 100));
+      pop(F.x - 8, GROUND - 76, '+' + (F.hp - before), 'good');
+      say(F.hp > before ? `${F.name} récupère ${F.hp - before} PV.` : `${F.name} est déjà en pleine forme.`);
+      await drain(F, F.hp);
+    } else {
+      if (F.boost < 2) { F.boost++; say(`L'attaque de ${F.name} augmente !`); } else say(`L'attaque de ${F.name} ne peut plus monter.`);
+      hud();
+      await sleep(400);
     }
   }
   async function attack(F, n, T) {
-    const mv = F.card.attaques[n], anim = F.f.attaques[n], name = 'attaque' + (n + 1), ranged = mv.portee === 'distance' || mv.genre === 'onde';
+    const mv = F.card.attaques[n], anim = F.f.attaques[n], name = 'attaque' + (n + 1), kind = reach(mv);
+    const ranged = kind === 'distance', still = kind !== 'contact';  // zone et soutien : sans bouger
     say(`${F.name} lance ${mv.nom} !`);
     const ms = anim.ms, hitAt = ms[0] + ms[1];
-    if (!ranged) await walk(F, T.x + (F.side ? 46 : -46), 280);
+    if (kind === 'soi') {
+      play(F, name);
+      await sleep(hitAt);
+      await support(F, mv);
+      await sleep(Math.max(0, animMs(F, name) - hitAt));
+      play(F, 'attente');
+      await sleep(250);
+      return;
+    }
+    if (!still) await walk(F, T.x + (F.side ? 46 : -46), 280);
     play(F, name, ranged ? { noFx: [2, 3] } : {});
     await sleep(ranged ? ms[0] : hitAt);
     if (ranged) {  // le projectile traverse l'arène, puis l'impact éclate sur la cible
@@ -388,7 +465,7 @@ export default async function (ctx) {
     await hit(F, mv, T);
     await sleep(Math.max(0, animMs(F, name) - (ranged ? ms[0] : hitAt)));
     play(F, 'attente');
-    if (!ranged) await walk(F, F.home, 320);
+    if (!still) await walk(F, F.home, 320);
     await sleep(250);
   }
   async function hit(F, mv, T) {
@@ -401,6 +478,14 @@ export default async function (ctx) {
     const words = r.eff > 1 ? ' C\'est très efficace !' : r.eff < 1 ? ' Ce n\'est pas très efficace…' : '';
     say(`${mv.nom} inflige ${r.dmg} dégâts${T.guard ? ' (garde)' : ''}.${words}`);
     await drain(T, T.hp);
+    if (mv.statut && !T.status && T.hp > 0 && Math.random() * 100 < mv.statut.chance) {
+      const rule = STATUS[mv.statut.nom] || { turns: 3 };
+      T.status = { nom: mv.statut.nom, turns: rule.turns };
+      hud();
+      await sleep(500);
+      say(rule.on ? rule.on(T.name) : `${T.name} subit ${mv.statut.nom} !`);
+      await sleep(600);
+    }
     setTimeout(() => { if (T.anim.name === 'degats' && T.hp > 0) play(T, 'attente'); }, animMs(T, 'degats'));
   }
   async function knockOut(T, winner) {
@@ -448,4 +533,4 @@ export default async function (ctx) {
   menu();
 }
 
-export const _test = { damage, effect, hpMax, cpuChoice, typeOf };
+export const _test = { damage, effect, hpMax, cpuChoice, typeOf, reach, atkOf, speedOf, STATUS };
