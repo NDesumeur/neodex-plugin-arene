@@ -1,6 +1,6 @@
 // NeoBestiary Arène : les créatures de NeoBestiary Studio s'affrontent au tour par tour dans une arène en pixel art.
 // La scène est un canevas 320x180 agrandi sans lissage ; les textes et boutons sont posés par-dessus (640x360 virtuels).
-const ID = 'neobase.arene', U = 'neoplugin://' + ID + '/';
+const ID = 'neodex.arene', U = 'neoplugin://' + ID + '/';
 const W = 320, H = 180, GROUND = 124;
 const RAR = ['commun', 'peu commun', 'rare', 'épique', 'légendaire'];
 const ELEMENTS = ['feu', 'eau', 'plante', 'vent', 'roche', 'glace', 'foudre', 'lumière', 'ombre', 'esprit', 'acier', 'poison'];
@@ -62,7 +62,7 @@ function cpuChoice(me, foe, rnd = Math.random) {  // l'ordinateur : le coup le p
 
 export default async function (ctx) {
   const view = ctx.view;
-  if (!ctx.host) { view.textContent = "Ce plugin doit être approuvé par NeoBase pour s'ouvrir."; return; }
+  if (!ctx.host) { view.textContent = "Ce plugin doit être approuvé par NeoDex pour s'ouvrir."; return; }
   view.innerHTML = HTML;
   const $ = s => view.querySelector(s), $$ = s => [...view.querySelectorAll(s)];
   const call = (n, ...a) => ctx.neo.pluginMain(ID, n, ...a);

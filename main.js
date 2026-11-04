@@ -1,5 +1,5 @@
 // NeoBestiary Arène, volet système : lit (sans jamais les modifier) les créatures de NeoBestiary Studio, rangées dans
-// Documents\NeoBestiary Studio\creatures\<créature>\arene.json, sert leurs images sur neoplugin://neobase.arene/lib/
+// Documents\NeoBestiary Studio\creatures\<créature>\arene.json, sert leurs images sur neoplugin://neodex.arene/lib/
 // et garde le palmarès des combats.
 const { app } = require('electron');
 const fs = require('fs'), path = require('path');
@@ -40,7 +40,7 @@ module.exports = ({ ipcMain, protocol, serveFile, readDoc, writeDoc }) => {
     return p;
   });
 
-  // neoplugin://neobase.arene/ui/<fichier> | lib/<créature>/<chemin>
+  // neoplugin://neodex.arene/ui/<fichier> | lib/<créature>/<chemin>
   protocol(async req => {
     const u = new URL(req.url), [, kind, ...rest] = u.pathname.split('/'), rel = decodeURIComponent(rest.join('/'));
     const file = kind === 'ui' ? inside(UI, rel) : kind === 'lib' ? inside(CREATURES(), rel) : null;

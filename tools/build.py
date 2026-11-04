@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Fabrique l'archive du plugin (neobase.arene-<version>.zip) : manifeste, page, volet système et ui/."""
+"""Fabrique l'archive du plugin (neodex.arene-<version>.zip) : manifeste, page, volet système et ui/."""
 import json
 import zipfile
 from pathlib import Path
