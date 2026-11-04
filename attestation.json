@@ -1,9 +1,9 @@
 {
   "pluginId": "neobase.arene",
   "repo": "NDesumeur/neobase-plugin-arene",
-  "version": "1.0.0",
-  "sha256": "ba982949974f06bcc36ecc3e6d132bb2df927954d61d0f0e212545586575ae17",
-  "approvedAt": "2026-11-04T01:25:49.664Z",
+  "version": "1.1.0",
+  "sha256": "932b5082ad429e14bee1f815ec522c13efdfdbc164766041f1e082c8e84d5011",
+  "approvedAt": "2026-11-04T03:00:17.722Z",
   "neobase": ">=4.1.0",
-  "signature": "yWvAHEgY6NaCOas0nQhuL4Egl4GFjhsKA8zvJA/yDBZwaqAkf+IY2HWbygqS89aInTFxu7grpi4FaSEpyAghDg=="
+  "signature": "RfBQ8S6TipIZDT3W0//l1w51tuSknMHq3MlWs0r2bKJAqoQODMyKyyH5peFEu4nWZxO2xgf2PPHhukzFHxMPBA=="
 }
