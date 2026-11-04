@@ -1,0 +1,22 @@
+# -*- coding: utf-8 -*-
+"""Fabrique l'archive du plugin (neobase.arene-<version>.zip) : manifeste, page, volet système et ui/."""
+import json
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    out = ROOT / f"{m['id']}-{m['version']}.zip"
+    files = [ROOT / n for n in ("plugin.json", "index.js", "main.js", "icon.png")]
+    files += sorted(p for p in (ROOT / "ui").iterdir() if p.is_file())
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in files:
+            z.write(f, f.relative_to(ROOT).as_posix())
+    print(out.name, len(files), "fichiers", out.stat().st_size // 1024, "Ko")
+
+
+if __name__ == "__main__":
+    main()
