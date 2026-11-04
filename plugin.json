@@ -1,0 +1,18 @@
+{
+  "id": "neobase.arene",
+  "name": "NeoBestiary Arène",
+  "version": "1.0.0",
+  "author": "NDesumeur",
+  "description": "Les créatures de NeoBestiary Studio s'affrontent au tour par tour dans une arène en pixel art : attaques animées, faiblesses, variantes, duel à deux et palmarès.",
+  "icon": "icon.png",
+  "entry": "index.js",
+  "view": "arene",
+  "neobase": ">=4.1.0",
+  "type": "app",
+  "category": "Jeux",
+  "mobile": false,
+  "system": false,
+  "dependencies": { "neobase.bestiarystudio": ">=1.0.7" },
+  "permissions": ["full"],
+  "main": "main.js"
+}
