@@ -162,7 +162,7 @@ export default async function (ctx) {
   function frameOf(F, t) {  // l'image en cours : planche, colonne, ligne (+ effet éventuel)
     const a = F.anim, dt = t - a.t0, dossier = F.f.dossier;
     if (a.name === 'marche') {
-      const k = F.m.marche.ordre[Math.floor(dt / F.m.marche.ms) % 4];
+      const k = F.m.marche.ordre[Math.floor(dt / F.m.marche.ms) % F.m.marche.ordre.length];
       return { sheet: lib(F.m, dossier + F.m.marche.image), col: F.m.marche.images.indexOf(k) };
     }
     if (a.name.startsWith('attaque')) {
