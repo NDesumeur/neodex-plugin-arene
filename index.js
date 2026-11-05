@@ -2,7 +2,7 @@
 // La scène est un canevas 320x180 agrandi sans lissage ; les textes et boutons sont posés par-dessus (640x360 virtuels).
 const ID = 'neodex.arene', U = 'neoplugin://' + ID + '/';
 const W = 320, H = 180, GROUND = 124;
-const RAR = ['commun', 'peu commun', 'rare', 'épique', 'légendaire'];
+const RAR = ['commun', 'peu commun', 'rare', 'épique', 'légendaire', '???'];  // ??? : la créature unique, n° 0
 const ELEMENTS = ['feu', 'eau', 'plante', 'vent', 'roche', 'glace', 'foudre', 'lumière', 'ombre', 'esprit', 'acier', 'poison'];
 const GENRE = { griffe: 'griffes', morsure: 'morsure', charge: 'charge', fouet: 'fouet', corne: 'corne', dard: 'dard', etreinte: 'étreinte',
   projectile: 'projectile', souffle: 'souffle', rayon: 'rayon', cri: 'cri', rafale: 'rafale', pluie: 'pluie', onde: 'onde',
@@ -51,7 +51,7 @@ const speedOf = F => F.card.stats.vitesse * stage(F, 'vitesse') * (F.status?.nom
 // chance de toucher (0..1) : précision de l'attaque, crans de précision, éblouissement
 const hitChance = (F, mv) => Math.min(1, (mv.precision || 100) / 100 * stage(F, 'precision') * (F.status?.nom === 'éblouissement' ? 2 / 3 : 1));
 function damage(att, move, def, roll = Math.random(), critRoll = Math.random()) {
-  const stab = move.element === att.type ? 1.2 : 1;
+  const stab = String(att.type || '').split(' et ').includes(move.element) ? 1.2 : 1;  // un type double (« ombre et lumière ») compte ses deux éléments
   const crit = critRoll < (move.critique || 1) / 16 ? 1.5 : 1;
   const base = move.puissance * (atkOf(att) / Math.max(1, defOf(def))) * .45;
   const dmg = Math.max(1, Math.round(base * stab * effect(move, def) * (.9 + .15 * roll) * crit * (def.guard ? .5 : 1)));

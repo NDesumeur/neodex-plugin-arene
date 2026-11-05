@@ -21,7 +21,7 @@ function roster() {
       if (m.format === 1 && Array.isArray(m.formes) && m.formes.length) out.push({ ...m, slug });
     } catch { /* créature pas encore prête pour le combat (pas de fiche) */ }
   }
-  out.sort((a, b) => (b.mis_a_jour || 0) - (a.mis_a_jour || 0));
+  out.sort((a, b) => (a.numero ?? 1e9) - (b.numero ?? 1e9) || (b.mis_a_jour || 0) - (a.mis_a_jour || 0));  // n° 0 (NeoMe) en tête
   return { studio: true, creatures: out };
 }
 

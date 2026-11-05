@@ -14,6 +14,8 @@ Les statuts : brûlure (perd des PV à chaque tour et frappe moins fort), poison
 
 Raccourcis : touches **1**, **2** et **3** pour les actions, **Échap** pour revenir au menu.
 
+- **NeoMe, n° 0** : toujours en tête de la liste, avec sa rareté **???** et son type double ombre et lumière (ses attaques d'ombre comme de lumière profitent de son type).
+
 ## Ce qu'il faut
 
 - **NeoBestiary Studio** 1.1.0 ou plus récent (installé avec l'Arène). Les créatures sont lues dans `Documents\NeoBestiary Studio\creatures`, sans jamais être modifiées.

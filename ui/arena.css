@@ -35,6 +35,7 @@
 .ar-rare { padding: 0 5px; color: var(--white); font-size: 12px; text-transform: capitalize; box-shadow: 1px 1px 0 var(--ink0); }
 .ar-rare.r0 { background: #6b6b6b; } .ar-rare.r1 { background: #3d8a3d; } .ar-rare.r2 { background: #2f6fd6; }
 .ar-rare.r3 { background: #8a3ab8; } .ar-rare.r4 { background: #c48a2c; }
+.ar-rare.r5 { background: linear-gradient(90deg, #14102a 50%, #c9a23a 50%); color: #fff; }
 .ar-chip { display: inline-block; padding: 0 4px; font-size: 12px; background: var(--ink2); box-shadow: inset 0 0 0 1px var(--plum); color: var(--lilac); text-transform: capitalize; }
 .ar-chip.bad { color: #ff9aa2; box-shadow: inset 0 0 0 1px #8a2a32; } .ar-chip.good { color: var(--glow); box-shadow: inset 0 0 0 1px var(--glow2); }
 
@@ -61,7 +62,7 @@
 .ar-cell span { width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
 .ar-cell:hover { box-shadow: inset 0 0 0 2px var(--brass2); }
 .ar-cell.on { box-shadow: inset 0 0 0 2px var(--brass), 0 0 0 2px var(--ink0); background: var(--plum); }
-.ar-cell.r3 span { color: #d8a8ff; } .ar-cell.r4 span { color: var(--brass); }
+.ar-cell.r3 span { color: #d8a8ff; } .ar-cell.r4 span { color: var(--brass); } .ar-cell.r5 span { color: #ff8ae0; }
 .ar-side { position: absolute; right: 0; top: 44px; bottom: 50px; width: 244px; overflow: auto; padding: 8px;
   background: rgba(13, 10, 20, .82); box-shadow: inset 0 0 0 2px var(--brass3); }
 .ar-portrait { display: block; width: 128px; height: 128px; margin: 0 auto 6px; }
