@@ -201,7 +201,9 @@ export default async function (ctx) {
   }
   function drawFighter(F, t) {
     if (!F) return;
-    const fr = frameOf(F, t), sx = Math.round(F.x - 32), sy = GROUND - 62, r = row(F);
+    // une créature qui flotte (arene.json : marche.flotte) : la même image, un lent va-et-vient vertical, sauf K.O.
+    const bob = F.m.marche?.flotte && F.anim.name !== 'ko' ? Math.round(Math.sin(t / 290) * 3) - 3 : 0;
+    const fr = frameOf(F, t), sx = Math.round(F.x - 32), sy = GROUND - 62 + bob, r = row(F);
     shadow(F.x);
     const im = img(fr.sheet);
     g.globalAlpha = F.alpha;
@@ -232,12 +234,14 @@ export default async function (ctx) {
   }
 
   // ---------------------------------------------------------------- scène : boucle de dessin
-  const S = { screen: 'menu', roster: [], records: {}, fighters: [], shake: 0, bolts: [], walkers: [], mode: 'cpu', pick: [], sig: [], dim: 0, flash: 0 };
+  const S = { screen: 'menu', roster: [], records: {}, fighters: [], shake: 0, bolts: [], walkers: [], mode: 'cpu', pick: [], sig: [], dim: 0, flash: 0, parts: [], rings: [], zoom: null, lt: 0, flashC: '255,236,255' };
   let alive = true;
   function frame(t) {
     if (!view.isConnected) { alive = false; ro.disconnect(); return; }
     g.save();
-    if (S.shake > t) g.translate(Math.round(rnd(-2, 2)), Math.round(rnd(-1, 1)));
+    if (S.shake > t) g.translate(Math.round(rnd(-3, 3)), Math.round(rnd(-2, 2)));
+    const z = S.zoom;  // coup de zoom sur l'impact d'une attaque signature
+    if (z && t < z.t0 + z.ms && t > z.t0) { const k = 1 + z.k * Math.sin(Math.PI * (t - z.t0) / z.ms); g.translate(z.x, z.y); g.scale(k, k); g.translate(-z.x, -z.y); }
     drawDeco(t);
     if (S.dim) { g.fillStyle = `rgba(10,4,24,${S.dim})`; g.fillRect(0, 0, W, H); }  // attaque signature : l'arène s'assombrit
     for (const w of S.walkers) {  // menu : des créatures traversent l'arène
@@ -256,11 +260,32 @@ export default async function (ctx) {
       if (!loaded(e) || dt < 0) continue;
       const i = o.loop ? Math.floor(dt / o.ms) % 10 : Math.min(9, Math.floor(dt / o.ms)), k = o.travel ? Math.min(1, dt / o.travel) : 0;
       g.save(); g.translate(Math.round(o.x + ((o.x1 ?? o.x) - o.x) * k), Math.round(o.y)); if (o.flip) g.scale(-1, 1);
-      if (o.beam) g.drawImage(e, i * 128, o.row * 128, 128, 128, 0, -o.size / 2, o.beam, o.size);
-      else g.drawImage(e, i * 128, o.row * 128, 128, 128, -o.size / 2, -o.size / 2, o.size, o.size);
+      for (const glow of [0, 1]) {  // l'effet, puis son halo (couleurs additionnées)
+        if (glow) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = .55; }
+        if (o.beam) g.drawImage(e, i * 128, o.row * 128, 128, 128, 0, -o.size / 2, o.beam, o.size);
+        else g.drawImage(e, i * 128, o.row * 128, 128, 128, -o.size / 2, -o.size / 2, o.size, o.size);
+      }
       g.restore();
     }
-    if (S.flash > t) { g.fillStyle = `rgba(255,236,255,${(S.flash - t) / 260 * .55})`; g.fillRect(0, 0, W, H); }
+    // ondes de choc et particules des attaques signature
+    const dt = Math.min(50, t - (S.lt || t)); S.lt = t;
+    S.rings = S.rings.filter(r => t - r.t0 < r.ms);
+    for (const r of S.rings) {
+      const k = (t - r.t0) / r.ms; if (k < 0) continue;
+      const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) ** 3);
+      g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = 1 - k; g.strokeStyle = r.c; g.lineWidth = Math.max(1, r.w * (1 - k));
+      g.beginPath(); g.ellipse(r.x, r.y, rad, rad * r.flat, 0, 0, 7); g.stroke(); g.restore();
+    }
+    S.parts = S.parts.filter(p => t - p.t0 < p.life);
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (const p of S.parts) {
+      if (t < p.t0) continue;
+      if (p.to) { p.vx += (p.to.x - p.x) * .012 * dt / 16; p.vy += (p.to.y - p.y) * .012 * dt / 16; p.vx *= .9; p.vy *= .9; }  // aspirée vers NeoMe
+      p.vy += (p.grav || 0) * dt / 16; p.x += p.vx * dt / 16; p.y += p.vy * dt / 16;
+      g.globalAlpha = Math.max(0, 1 - (t - p.t0) / p.life); g.fillStyle = p.c; g.fillRect(Math.round(p.x), Math.round(p.y), p.s, p.s);
+    }
+    g.restore();
+    if (S.flash > t) { g.fillStyle = `rgba(${S.flashC},${Math.min(.7, (S.flash - t) / 260 * .55)})`; g.fillRect(0, 0, W, H); }
     if (S.screen !== 'battle' && S.screen !== 'select') { g.fillStyle = 'rgba(13,10,20,.35)'; g.fillRect(0, 0, W, H); }
     g.restore();
     if (alive) requestAnimationFrame(frame);
@@ -508,30 +533,49 @@ export default async function (ctx) {
   async function signature(F, T, mv, name, v) {
     const sheet = `${U}ui/neome/${v}.png`, cy = GROUND - 30, dir = F.side ? -1 : 1, now = () => performance.now();
     const add = o => (S.sig.push({ t0: now(), ...o }), S.sig[S.sig.length - 1]), drop = (...o) => { S.sig = S.sig.filter(x => !o.includes(x)); };
-    const boom = (ms = 260) => { S.flash = now() + ms; S.shake = now() + ms * 2; };
-    S.dim = .62; play(F, name, { noFx: [0, 1, 2, 3] });  // ses petits effets de base laissent la place à la planche signature
+    const boom = (ms = 260, c = '255,236,255') => { S.flash = now() + ms; S.flashC = c; S.shake = now() + ms * 2; };
+    const NEO = ['#ff4fd8', '#b06bff', '#ffd84a', '#ffffff', '#7a2fd0'], NOTE = ['#ff4fd8', '#5ef0ff', '#ffffff', '#b06bff'];
+    // des éclats qui jaillissent, des éclats aspirés vers un point (la charge), une onde de choc, un coup de zoom
+    const burst = (x, y, n, cols, sp = 3, life = 700, o = {}) => { for (let k = 0; k < n; k++) { const a = rnd(0, 6.283), v = rnd(.3, 1) * sp; S.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - (o.up || 0), c: cols[k % cols.length], s: Math.random() < .3 ? 2 : 1, life: rnd(.6, 1) * life, t0: now() + (o.delay ? rnd(0, o.delay) : 0), grav: o.grav ?? .05 }); } };
+    const suck = (x, y, n, cols, r = 60, life = 520) => { for (let k = 0; k < n; k++) { const a = rnd(0, 6.283), d = rnd(.5, 1) * r; S.parts.push({ x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * .7, vx: 0, vy: 0, to: { x, y }, c: cols[k % cols.length], s: 1 + (k % 3 === 0), life, t0: now() + rnd(0, life * .5) }); } };
+    const ring = (x, y, r1, c, ms = 520, w = 4, o = {}) => S.rings.push({ x, y, r0: o.r0 || 4, r1, c, ms, w, flat: o.flat || .55, t0: now() + (o.delay || 0) });
+    const punch = (x, y, k = .12, ms = 260) => { S.zoom = { x, y, k, ms, t0: now() }; };
+    S.dim = .72; play(F, name, { noFx: [0, 1, 2, 3] });  // ses petits effets de base laissent la place à la planche signature
     if (v === 'eclipse') {  // l'ombre se forme sur lui, s'embrase et s'ouvre en anneau qui balaie l'arène
-      const a = add({ sheet, row: 0, x: F.x, y: cy - 8, ms: 80, size: 160 });
-      await sleep(480); boom(300);
-      const b = add({ sheet, row: 2, x: T.x, y: cy - 4, ms: 60, size: 128 });
-      await hit(F, mv, T); await sleep(150); drop(a, b);
+      suck(F.x, cy - 8, 70, ['#7a2fd0', '#b06bff', '#ff4fd8'], 90, 560);
+      const a = add({ sheet, row: 0, x: F.x, y: cy - 8, ms: 80, size: 210 });
+      await sleep(480); boom(320, '255,216,74'); punch(F.x, cy - 8, .16, 320);
+      ring(F.x, cy - 6, W, '#ffd84a', 650, 6); ring(F.x, cy - 6, W * .8, '#ff4fd8', 600, 4, { delay: 90 }); ring(F.x, cy - 6, W * .6, '#ffffff', 520, 3, { delay: 160 });
+      burst(F.x, cy - 8, 90, NEO, 4.5, 900, { grav: .03 });
+      const b = add({ sheet, row: 2, x: T.x, y: cy - 4, ms: 60, size: 180 });
+      burst(T.x, cy - 6, 50, ['#ffd84a', '#ffffff', '#7a2fd0'], 3.5, 700, { delay: 120 });
+      await hit(F, mv, T); await sleep(220); drop(a, b);
     } else if (v === 'regard') {  // ses yeux se chargent, puis deux rayons traversent l'arène
-      const a = add({ sheet, row: 0, x: F.x + dir * 4, y: cy - 12, ms: 45, size: 72 });
-      await sleep(420);
-      const beam = add({ sheet, row: 1, x: F.x + dir * 10, y: cy - 12, ms: 40, loop: true, size: 44, beam: Math.max(20, Math.abs(T.x - F.x) - 10), flip: !!F.side });
-      const b = add({ sheet, row: 2, x: T.x, y: cy - 8, ms: 55, size: 116, t0: now() + 90 });
-      await sleep(200); boom();
-      await hit(F, mv, T); drop(a, beam); await sleep(120); drop(b);
+      suck(F.x + dir * 4, cy - 12, 40, ['#ffd84a', '#ffffff', '#ff4fd8'], 50, 420);
+      const a = add({ sheet, row: 0, x: F.x + dir * 4, y: cy - 12, ms: 45, size: 100 });
+      await sleep(420); punch(F.x, cy - 12, .08, 200);
+      const beam = add({ sheet, row: 1, x: F.x + dir * 10, y: cy - 12, ms: 40, loop: true, size: 64, beam: Math.max(20, Math.abs(T.x - F.x) - 10), flip: !!F.side });
+      for (let k = 0; k < 6; k++) burst(F.x + dir * (20 + k * Math.abs(T.x - F.x) / 7), cy - 12, 6, ['#ffd84a', '#ffffff'], 1.2, 420, { delay: 160, grav: 0 });
+      const b = add({ sheet, row: 2, x: T.x, y: cy - 8, ms: 55, size: 160, t0: now() + 90 });
+      await sleep(200); boom(280, '255,240,200'); punch(T.x, cy - 8, .14, 280);
+      ring(T.x, cy - 8, 90, '#ffd84a', 480, 5); burst(T.x, cy - 8, 60, ['#ffd84a', '#ffffff', '#ff4fd8'], 4, 750);
+      await hit(F, mv, T); drop(a, beam); await sleep(160); drop(b);
     } else if (v === 'casque') {  // une onde jaillit du casque, les notes filent jusqu'à l'ennemi et éclatent
-      const a = add({ sheet, row: 0, x: F.x, y: cy - 6, ms: 40, size: 120 });
+      const a = add({ sheet, row: 0, x: F.x, y: cy - 6, ms: 40, size: 160 });
+      for (let k = 0; k < 4; k++) ring(F.x, cy - 6, 70 + k * 20, k % 2 ? '#5ef0ff' : '#ff4fd8', 480, 3, { delay: k * 110 });
       await sleep(360);
-      const notes = add({ sheet, row: 1, x: F.x + dir * 18, x1: T.x, y: cy - 8, travel: 420, ms: 50, loop: true, size: 76 });
+      const notes = add({ sheet, row: 1, x: F.x + dir * 18, x1: T.x, y: cy - 8, travel: 420, ms: 50, loop: true, size: 96 });
+      for (let k = 0; k < 8; k++) burst(F.x + dir * 18 + (T.x - F.x - dir * 18) * k / 8, cy - 8, 5, NOTE, 1, 500, { delay: 60 + k * 50, grav: -.02 });
       await sleep(420); drop(a, notes);
-      const b = add({ sheet, row: 2, x: T.x, y: cy - 6, ms: 55, size: 136 }); boom(200);
-      await hit(F, mv, T); await sleep(100); drop(b);
+      const b = add({ sheet, row: 2, x: T.x, y: cy - 6, ms: 55, size: 190 }); boom(240, '200,120,255'); punch(T.x, cy - 6, .13, 260);
+      ring(T.x, cy - 6, 110, '#5ef0ff', 520, 5); ring(T.x, cy - 6, 80, '#ff4fd8', 480, 4, { delay: 80 }); burst(T.x, cy - 6, 70, NOTE, 3.8, 800);
+      await hit(F, mv, T); await sleep(140); drop(b);
     } else {  // coquille : un dôme d'éclats se referme sur lui et le soigne
-      const a = add({ sheet, row: 0, x: F.x, y: cy - 6, ms: 95, size: 128 });
-      await sleep(520); S.flash = now() + 200;
+      const a = add({ sheet, row: 0, x: F.x, y: cy - 6, ms: 95, size: 170 });
+      burst(F.x, cy + 6, 40, ['#ffffff', '#ffd4ec', '#ff4fd8'], 2.2, 900, { up: 1.6, grav: .06, delay: 300 });
+      await sleep(520); boom(220, '255,216,240'); punch(F.x, cy - 6, .1, 260);
+      ring(F.x, cy - 6, 70, '#ffd84a', 520, 4); ring(F.x, cy - 6, 50, '#ffffff', 440, 3, { delay: 100 });
+      burst(F.x, cy - 30, 36, ['#ffd84a', '#ffffff'], 1.2, 1100, { grav: .04, delay: 200 });
       await support(F, mv); await sleep(250); drop(a);
     }
     S.dim = 0; play(F, 'attente'); await sleep(250);

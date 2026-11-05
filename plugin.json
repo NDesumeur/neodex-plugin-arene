@@ -1,7 +1,7 @@
 {
   "id": "neodex.arene",
   "name": "NeoBestiary Arène",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "author": "NDesumeur",
   "description": "Les créatures de NeoBestiary Studio s'affrontent au tour par tour dans une arène en pixel art : 2 à 4 attaques animées, 204 techniques venues du Studio, 9 statuts (brûlure, poison, gel, paralysie, sommeil, confusion, saignement, éblouissement, peur), crans de statistiques, précision, coups multiples, vol de vie, soins et renforts, faiblesses, variantes, duel à deux et palmarès ; NeoMe, n° 0, avec ses attaques signature.",
   "icon": "icon.png",
