@@ -14,6 +14,7 @@ Les statuts : brûlure (perd des PV à chaque tour et frappe moins fort), poison
 
 Raccourcis : touches **1**, **2** et **3** pour les actions, **Échap** pour revenir au menu.
 
+- **Doubles types** : une créature sur deux a deux types, affichés côte à côte ; ses attaques des deux éléments profitent de son type.
 - **NeoMe, n° 0** : toujours en tête de la liste, avec sa rareté **???** et son type double ombre et lumière (ses attaques d'ombre comme de lumière profitent de son type). Lui seul a des **attaques signature**, dessinées par le modèle d'image de NeoBestiary Studio et jouées en grand : l'arène s'assombrit, Éclipse s'embrase autour de lui puis balaie l'arène, Regard d'aurore lance deux rayons jusqu'à l'ennemi, Mélodie du casque envoie une onde de notes, Coquille d'origine referme un dôme d'éclats qui le soigne.
 
 ## Ce qu'il faut

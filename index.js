@@ -40,6 +40,7 @@ const HTML = `<link rel="stylesheet" href="${U}ui/arena.css">
 // ------------------------------------------------------------------ règles du combat
 const hpMax = c => c.stats.pv * 2 + 60;
 const typeOf = (m, f) => ELEMENTS.includes(f.id) ? f.id : m.type;
+const typeChips = t => String(t || '').split(' et ').map(x => `<span class="ar-chip">${esc(x)}</span>`).join('');  // un badge par type (« feu et vent »)
 function effect(move, target) {  // multiplicateur d'élément contre la créature visée
   if (target.card.faiblesses.includes(move.element)) return 1.5;
   if (target.card.resistances.includes(move.element)) return .67;
@@ -309,7 +310,7 @@ export default async function (ctx) {
   function cardHtml(m, f) {
     const k = f.combat, r = RAR.indexOf(k.rarete), chips = (l, cls) => l.map(t => `<span class="ar-chip ${cls}">${esc(t)}</span>`).join(' ') || '—';
     return `<div class="ar-detail">
-      <div class="ar-dhead"><b>${esc(f.nom)}</b><span class="ar-rare r${r}">${esc(k.rarete)}</span><span class="ar-chip">${esc(typeOf(m, f))}</span></div>
+      <div class="ar-dhead"><b>${esc(f.nom)}</b><span class="ar-rare r${r}">${esc(k.rarete)}</span>${typeChips(typeOf(m, f))}</div>
       <div class="ar-stats">${[['pv', 'PV'], ['attaque', 'Attaque'], ['defense', 'Défense'], ['vitesse', 'Vitesse']].map(([s, l]) =>
         `<span>${l}</span><i><b style="width:${Math.min(100, k.stats[s])}%"></b></i><em>${k.stats[s]}</em>`).join('')}</div>
       <div class="ar-weak">Faible : ${chips(k.faiblesses, 'bad')}<br>Résiste : ${chips(k.resistances, 'good')}</div>
@@ -352,7 +353,7 @@ export default async function (ctx) {
   // ---------------------------------------------------------------- combat
   function hud() {
     const [a, b] = S.fighters, bar = (F, i) => `<div class="ar-hp ${i ? 'right' : ''}">
-      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span><span class="ar-chip">${esc(F.type)}</span>${F.status ? `<span class="ar-chip bad">${esc(F.status.nom)}</span>` : ''}${Object.entries(F.st).filter(([, v]) => v).map(([k, v]) => `<span class="ar-chip ${v > 0 ? 'good' : 'bad'}">${STAT_SHORT[k]} ${v > 0 ? '+' : ''}${v}</span>`).join('')}</div>
+      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span>${typeChips(F.type)}${F.status ? `<span class="ar-chip bad">${esc(F.status.nom)}</span>` : ''}${Object.entries(F.st).filter(([, v]) => v).map(([k, v]) => `<span class="ar-chip ${v > 0 ? 'good' : 'bad'}">${STAT_SHORT[k]} ${v > 0 ? '+' : ''}${v}</span>`).join('')}</div>
       <i><b class="${F.show / F.max < .25 ? 'low' : F.show / F.max < .5 ? 'mid' : ''}" style="width:${Math.max(0, F.show / F.max * 100)}%"></b></i>
       <em>${Math.max(0, Math.ceil(F.show))} / ${F.max}</em></div>`;
     $('#hud').innerHTML = bar(a, 0) + bar(b, 1);
