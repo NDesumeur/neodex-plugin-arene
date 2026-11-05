@@ -11,7 +11,7 @@ def main():
     m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     out = ROOT / f"{m['id']}-{m['version']}.zip"
     files = [ROOT / n for n in ("plugin.json", "index.js", "main.js", "icon.png")]
-    files += sorted(p for p in (ROOT / "ui").iterdir() if p.is_file())
+    files += sorted(p for p in (ROOT / "ui").rglob("*") if p.is_file())  # ui/neome : les attaques signature de NeoMe
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:
             z.write(f, f.relative_to(ROOT).as_posix())

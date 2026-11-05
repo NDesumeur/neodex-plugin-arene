@@ -228,13 +228,14 @@ export default async function (ctx) {
   }
 
   // ---------------------------------------------------------------- scène : boucle de dessin
-  const S = { screen: 'menu', roster: [], records: {}, fighters: [], shake: 0, bolts: [], walkers: [], mode: 'cpu', pick: [] };
+  const S = { screen: 'menu', roster: [], records: {}, fighters: [], shake: 0, bolts: [], walkers: [], mode: 'cpu', pick: [], sig: [], dim: 0, flash: 0 };
   let alive = true;
   function frame(t) {
     if (!view.isConnected) { alive = false; ro.disconnect(); return; }
     g.save();
     if (S.shake > t) g.translate(Math.round(rnd(-2, 2)), Math.round(rnd(-1, 1)));
     drawDeco(t);
+    if (S.dim) { g.fillStyle = `rgba(10,4,24,${S.dim})`; g.fillRect(0, 0, W, H); }  // attaque signature : l'arène s'assombrit
     for (const w of S.walkers) {  // menu : des créatures traversent l'arène
       w.F.x += w.v;
       if (w.F.x > W + 40 || w.F.x < -40) S.walkers = S.walkers.filter(x => x !== w);
@@ -246,6 +247,16 @@ export default async function (ctx) {
       const k = Math.min(1, (t - b.t0) / b.ms), x = b.x0 + (b.x1 - b.x0) * k, e = img(b.sheet);
       if (loaded(e)) g.drawImage(e, b.col * 64, b.row * 64, 64, 64, Math.round(x - 32), b.y, 64, 64);
     }
+    for (const o of S.sig) {  // attaques signature de NeoMe : planches de 10 images de 128 px (ui/neome)
+      const e = img(o.sheet), dt = t - o.t0;
+      if (!loaded(e) || dt < 0) continue;
+      const i = o.loop ? Math.floor(dt / o.ms) % 10 : Math.min(9, Math.floor(dt / o.ms)), k = o.travel ? Math.min(1, dt / o.travel) : 0;
+      g.save(); g.translate(Math.round(o.x + ((o.x1 ?? o.x) - o.x) * k), Math.round(o.y)); if (o.flip) g.scale(-1, 1);
+      if (o.beam) g.drawImage(e, i * 128, o.row * 128, 128, 128, 0, -o.size / 2, o.beam, o.size);
+      else g.drawImage(e, i * 128, o.row * 128, 128, 128, -o.size / 2, -o.size / 2, o.size, o.size);
+      g.restore();
+    }
+    if (S.flash > t) { g.fillStyle = `rgba(255,236,255,${(S.flash - t) / 260 * .55})`; g.fillRect(0, 0, W, H); }
     if (S.screen !== 'battle' && S.screen !== 'select') { g.fillStyle = 'rgba(13,10,20,.35)'; g.fillRect(0, 0, W, H); }
     g.restore();
     if (alive) requestAnimationFrame(frame);
@@ -362,7 +373,8 @@ export default async function (ctx) {
     const [p1, p2] = S.pick;
     S.fighters = [fighter(p1.m, p1.f, 0), fighter(p2.m, p2.f, 1)];
     const needs = S.fighters.flatMap(F => [F.m.marche.image, ...Object.values(F.m.animations).map(a => a.image),
-      ...F.f.attaques.flatMap(a => [a.image, a.effet])].map(p => img(lib(F.m, F.f.dossier + p)).ready));
+      ...F.f.attaques.flatMap(a => [a.image, a.effet])].map(p => img(lib(F.m, F.f.dossier + p)).ready)
+      .concat(F.m.slug === 'neome' ? Object.keys(SIG).map(v => img(`${U}ui/neome/${v}.png`).ready) : []));
     ui.innerHTML = `<div class="ar-battle"><div class="ar-hudrow" id="hud"></div>
       <div class="ar-box"><div class="ar-log" id="log">Les créatures entrent dans l'arène…</div><div class="ar-acts" id="acts"></div></div></div>`;
     hud();
@@ -487,10 +499,45 @@ export default async function (ctx) {
     if (mv.effets) await effects(F, mv, F, true);
     else if (mv.genre === 'renfort') await raise(F, 'attaque', 1);  // ancienne fiche : renfort = attaque
   }
+  // NeoMe (n° 0) a seul ses attaques signature : dessinées par le modèle du Studio, en grand, avec leur mise en scène
+  const SIG = { eclipse: 1, regard: 1, casque: 1, coquille: 1 };
+  async function signature(F, T, mv, name, v) {
+    const sheet = `${U}ui/neome/${v}.png`, cy = GROUND - 30, dir = F.side ? -1 : 1, now = () => performance.now();
+    const add = o => (S.sig.push({ t0: now(), ...o }), S.sig[S.sig.length - 1]), drop = (...o) => { S.sig = S.sig.filter(x => !o.includes(x)); };
+    const boom = (ms = 260) => { S.flash = now() + ms; S.shake = now() + ms * 2; };
+    S.dim = .62; play(F, name, { noFx: [0, 1, 2, 3] });  // ses petits effets de base laissent la place à la planche signature
+    if (v === 'eclipse') {  // l'ombre se forme sur lui, s'embrase et s'ouvre en anneau qui balaie l'arène
+      const a = add({ sheet, row: 0, x: F.x, y: cy - 8, ms: 80, size: 160 });
+      await sleep(480); boom(300);
+      const b = add({ sheet, row: 2, x: T.x, y: cy - 4, ms: 60, size: 128 });
+      await hit(F, mv, T); await sleep(150); drop(a, b);
+    } else if (v === 'regard') {  // ses yeux se chargent, puis deux rayons traversent l'arène
+      const a = add({ sheet, row: 0, x: F.x + dir * 4, y: cy - 12, ms: 45, size: 72 });
+      await sleep(420);
+      const beam = add({ sheet, row: 1, x: F.x + dir * 10, y: cy - 12, ms: 40, loop: true, size: 44, beam: Math.max(20, Math.abs(T.x - F.x) - 10), flip: !!F.side });
+      const b = add({ sheet, row: 2, x: T.x, y: cy - 8, ms: 55, size: 116, t0: now() + 90 });
+      await sleep(200); boom();
+      await hit(F, mv, T); drop(a, beam); await sleep(120); drop(b);
+    } else if (v === 'casque') {  // une onde jaillit du casque, les notes filent jusqu'à l'ennemi et éclatent
+      const a = add({ sheet, row: 0, x: F.x, y: cy - 6, ms: 40, size: 120 });
+      await sleep(360);
+      const notes = add({ sheet, row: 1, x: F.x + dir * 18, x1: T.x, y: cy - 8, travel: 420, ms: 50, loop: true, size: 76 });
+      await sleep(420); drop(a, notes);
+      const b = add({ sheet, row: 2, x: T.x, y: cy - 6, ms: 55, size: 136 }); boom(200);
+      await hit(F, mv, T); await sleep(100); drop(b);
+    } else {  // coquille : un dôme d'éclats se referme sur lui et le soigne
+      const a = add({ sheet, row: 0, x: F.x, y: cy - 6, ms: 95, size: 128 });
+      await sleep(520); S.flash = now() + 200;
+      await support(F, mv); await sleep(250); drop(a);
+    }
+    S.dim = 0; play(F, 'attente'); await sleep(250);
+  }
   async function attack(F, n, T) {
     const mv = F.card.attaques[n], anim = F.f.attaques[n], name = 'attaque' + (n + 1), kind = reach(mv);
     const ranged = kind === 'distance', still = kind !== 'contact';  // zone et soutien : sans bouger
     say(`${F.name} lance ${mv.nom} !`);
+    const sv = mv.visuel || anim.visuel;
+    if (F.m.slug === 'neome' && SIG[sv]) return signature(F, T, mv, name, sv);
     const ms = anim.ms, hitAt = ms[0] + ms[1];
     if (kind === 'soi') {
       play(F, name);
