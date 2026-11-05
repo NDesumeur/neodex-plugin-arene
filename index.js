@@ -41,8 +41,11 @@ const HTML = `<link rel="stylesheet" href="${U}ui/arena.css">
 const hpMax = c => c.stats.pv * 2 + 60;
 const typeOf = (m, f) => ELEMENTS.includes(f.id) ? f.id : m.type;
 const typeChips = t => String(t || '').split(' et ').map(x => `<span class="ar-chip">${esc(x)}</span>`).join('');  // un badge par type (« feu et vent »)
-function effect(move, target) {  // multiplicateur d'élément contre la créature visée
-  if (target.card.faiblesses.includes(move.element)) return 1.5;
+const XM = { 4: '×4', 2: '×2', .5: '×½', .25: '×¼', 0: '×0' };
+function effect(move, target) {  // multiplicateur d'élément contre la créature visée : table des types du Studio (×4 à ×0)
+  const m = target.card.multiplicateurs;
+  if (m) return m[move.element] ?? 1;
+  if (target.card.faiblesses.includes(move.element)) return 1.5;  // fiches d'avant la table des types
   if (target.card.resistances.includes(move.element)) return .67;
   return 1;
 }
@@ -55,7 +58,7 @@ function damage(att, move, def, roll = Math.random(), critRoll = Math.random()) 
   const stab = String(att.type || '').split(' et ').includes(move.element) ? 1.2 : 1;  // un type double (« ombre et lumière ») compte ses deux éléments
   const crit = critRoll < (move.critique || 1) / 16 ? 1.5 : 1;
   const base = move.puissance * (atkOf(att) / Math.max(1, defOf(def))) * .45;
-  const dmg = Math.max(1, Math.round(base * stab * effect(move, def) * (.9 + .15 * roll) * crit * (def.guard ? .5 : 1)));
+  const dmg = effect(move, def) === 0 ? 0 : Math.max(1, Math.round(base * stab * effect(move, def) * (.9 + .15 * roll) * crit * (def.guard ? .5 : 1)));
   return { dmg, crit: crit > 1, eff: effect(move, def) };
 }
 function cpuChoice(me, foe, rnd = Math.random) {  // l'ordinateur : le coup le plus fort, un soin ou un renfort à propos
@@ -313,7 +316,7 @@ export default async function (ctx) {
       <div class="ar-dhead"><b>${esc(f.nom)}</b><span class="ar-rare r${r}">${esc(k.rarete)}</span>${typeChips(typeOf(m, f))}</div>
       <div class="ar-stats">${[['pv', 'PV'], ['attaque', 'Attaque'], ['defense', 'Défense'], ['vitesse', 'Vitesse']].map(([s, l]) =>
         `<span>${l}</span><i><b style="width:${Math.min(100, k.stats[s])}%"></b></i><em>${k.stats[s]}</em>`).join('')}</div>
-      <div class="ar-weak">Faible : ${chips(k.faiblesses, 'bad')}<br>Résiste : ${chips(k.resistances, 'good')}</div>
+      <div class="ar-weak">Faible : ${chips(k.faiblesses.map(e => e + (XM[k.multiplicateurs?.[e]] ? ' ' + XM[k.multiplicateurs[e]] : '')), 'bad')}<br>Résiste : ${chips(k.resistances.map(e => e + (XM[k.multiplicateurs?.[e]] ? ' ' + XM[k.multiplicateurs[e]] : '')), 'good')}${(k.immunites || []).length ? `<br>Immunisé : ${chips(k.immunites, 'good')}` : ''}</div>
       ${k.attaques.map((a, i) => `<div class="ar-move"><b>${i + 1}. ${esc(a.nom)}</b> <span class="ar-chip">${esc(a.element)}</span> <span class="ar-chip">${GENRE[a.genre] || esc(a.genre)}</span> <em>${moveInfo(a)}</em></div>`).join('')}
     </div>`;
   }
@@ -393,7 +396,7 @@ export default async function (ctx) {
       acts.classList.toggle('many', n > 2);
       acts.innerHTML = F.card.attaques.map((a, i) => {
         const foe = S.fighters[1 - F.side], e = a.effet ? 1 : effect(a, foe);
-        return `<button class="ar-btn dark ar-act" data-a="${i}"><b>${i + 1}. ${esc(a.nom)}</b><small>${esc(a.element)} · ${GENRE[a.genre] || esc(a.genre)} · ${moveInfo(a)}${e > 1 ? ' · efficace' : e < 1 ? ' · peu efficace' : ''}</small></button>`;
+        return `<button class="ar-btn dark ar-act" data-a="${i}"><b>${i + 1}. ${esc(a.nom)}</b><small>${esc(a.element)} · ${GENRE[a.genre] || esc(a.genre)} · ${moveInfo(a)}${e === 0 ? ' · aucun effet' : e >= 4 ? ' · super efficace ×4' : e > 1 ? ' · efficace' : e < 1 ? ' · peu efficace' : ''}</small></button>`;
       }).join('') + `<button class="ar-btn dark ar-act" data-a="garde"><b>${n + 1}. Garde</b><small>moitié moins de dégâts</small></button>`;
       const pickIt = v => { acts.innerHTML = ''; view.removeEventListener('keydown', key); done(v); };
       const key = e => { const k = +e.key; if (k >= 1 && k <= n) pickIt(k - 1); if (k === n + 1) pickIt('garde'); };
@@ -570,6 +573,7 @@ export default async function (ctx) {
   }
   async function hit(F, mv, T) {
     if (Math.random() > hitChance(F, mv)) { say(`${T.name} esquive ${mv.nom} !`); pop(T.x - 14, GROUND - 76, 'raté', 'weak'); await sleep(650); return; }
+    if (effect(mv, T) === 0) { say(`Ça n'affecte pas ${T.name}…`); pop(T.x - 14, GROUND - 76, 'immunisé', 'weak'); await sleep(750); return; }  // immunité : ni dégâts ni statut
     const n = mv.coups ? mv.coups[0] + Math.floor(Math.random() * (mv.coups[1] - mv.coups[0] + 1)) : 1;
     let total = 0, r;
     for (let i = 0; i < n && T.hp > 0; i++) {  // coups multiples : chacun peut être critique
@@ -583,7 +587,7 @@ export default async function (ctx) {
       if (n > 1) await sleep(180);
     }
     r.dmg = total;
-    const words = r.eff > 1 ? ' C\'est très efficace !' : r.eff < 1 ? ' Ce n\'est pas très efficace…' : '';
+    const words = r.eff === 0 ? ' Ça n\'a aucun effet…' : r.eff >= 4 ? ' C\'est super efficace !' : r.eff > 1 ? ' C\'est très efficace !' : r.eff < 1 ? ' Ce n\'est pas très efficace…' : '';
     say(`${mv.nom} inflige ${r.dmg} dégâts${n > 1 ? ` en ${n} coups` : ''}${T.guard ? ' (garde)' : ''}.${words}`);
     await drain(T, T.hp);
     if (mv.drain && F.hp < F.max) {
