@@ -10,6 +10,8 @@
   "neobase": ">=4.1.0",
   "type": "app",
   "category": "Jeux",
+  "syncMode": "progression",
+  "syncInfo": "Équipe, rang, récompenses.",
   "mobile": false,
   "system": false,
   "dependencies": {
