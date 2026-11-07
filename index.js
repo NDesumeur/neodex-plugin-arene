@@ -237,7 +237,7 @@ export default async function (ctx) {
   const S = { screen: 'menu', roster: [], records: {}, fighters: [], shake: 0, bolts: [], walkers: [], mode: 'cpu', pick: [], sig: [], dim: 0, flash: 0, parts: [], rings: [], zoom: null, lt: 0, flashC: '255,236,255' };
   let alive = true;
   function frame(t) {
-    if (!view.isConnected) { alive = false; ro.disconnect(); return; }
+    if (!view.isConnected) { alive = false; ro.disconnect(); stopMusic(); return; }
     g.save();
     if (S.shake > t) g.translate(Math.round(rnd(-3, 3)), Math.round(rnd(-2, 2)));
     const z = S.zoom;  // coup de zoom sur l'impact d'une attaque signature
@@ -312,9 +312,29 @@ export default async function (ctx) {
 
   // ---------------------------------------------------------------- écrans
   const btn = (id, label, cls = 'dark') => `<button class="ar-btn ${cls}" id="${id}">${label}</button>`;
+  // ---------------------------------------------------------------- musique et sac (créations du Studio)
+  const COMBAT_MOODS = ['tendue', 'epique', 'épique', 'sombre', 'combat', 'heroique', 'héroïque'];
+  function stopMusic() { if (S.audio) { S.audio.pause(); S.audio = null; } }
+  function startMusic() {
+    stopMusic();
+    const pick = S.prefs.music, list = S.musics, fit = list.filter(m => COMBAT_MOODS.some(k => (m.ambiance || '').toLowerCase().includes(k)));
+    const m = pick === '' || pick === undefined ? null : pick === '*' ? (fit.length ? fit : list)[Math.floor(Math.random() * (fit.length || list.length))] : list.find(x => x.slug === pick);
+    if (!m) return;
+    S.audio = new Audio(`${U}mus/${encodeURIComponent(m.slug)}/musique.mp3`); S.audio.loop = true; S.audio.volume = .45;
+    S.audio.play().catch(() => {});
+  }
+  async function useItem(F, it) {
+    F.bag.delete(it.slug);
+    say(`${F.name} utilise ${it.nom} !`); await sleep(600);
+    const c = it.combat;
+    if (c.soin) await heal(F, c.soin);
+    if (c.purge && F.status) { say(`${F.name} n'est plus sous l'effet de ${F.status.nom}.`); F.status = null; hud(); await sleep(500); }
+    if (c.stat) await raise(F, c.stat, c.niveaux || 1);
+  }
   async function menu() {
-    S.screen = 'menu'; S.fighters = []; S.bolts = [];
+    S.screen = 'menu'; S.fighters = []; S.bolts = []; stopMusic();
     try { S.roster = (await call('roster')).creatures; S.studio = true; } catch (e) { S.roster = []; S.err = e.message; }
+    try { const s = await call('studio'); S.musics = s.musics; S.items = s.items; S.prefs = s.prefs; } catch { S.musics = []; S.items = []; S.prefs = {}; }
     const n = S.roster.length;
     ui.innerHTML = `<div class="ar-menu">
       <div class="ar-logo"><small>NeoBestiary</small><b>Arène</b></div>
@@ -322,6 +342,8 @@ export default async function (ctx) {
         ${btn('mCpu', 'Combat contre l\'ordinateur', 'go')}
         ${btn('mDuel', 'Duel à deux joueurs')}
         ${btn('mRec', 'Palmarès')}
+        <label class="ar-hint">Musique du combat <select id="mMus" class="ar-sel"><option value="">Aucune</option>${S.musics.length ? `<option value="*">Au hasard (tendue ou épique d'abord)</option>` : ''}${S.musics.map(m => `<option value="${esc(m.slug)}">${esc(m.nom)}</option>`).join('')}</select></label>
+        <div class="ar-hint">${S.items.length ? `Sac : ${S.items.length} objet${S.items.length > 1 ? 's' : ''} de combat du Studio, chacun utilisable une fois par combat.` : 'Crée de la nourriture, des potions ou des armes dans le Studio : elles iront dans ton sac.'}</div>
       </div>
       <div class="ar-hint">${n ? `${n} créature${n > 1 ? 's' : ''} prête${n > 1 ? 's' : ''} au combat` :
         'Aucune créature prête : crées-en dans NeoBestiary Studio (avec leur fiche de combat).'}</div></div>`;
@@ -329,6 +351,8 @@ export default async function (ctx) {
     $('#mCpu').onclick = () => select('cpu');
     $('#mDuel').onclick = () => select('duel');
     $('#mRec').onclick = records;
+    $('#mMus').value = S.musics.some(m => m.slug === S.prefs.music) || S.prefs.music === '*' ? S.prefs.music : '';
+    $('#mMus').onchange = e => call('prefs', { music: e.target.value }).then(p => { S.prefs = p; }).catch(() => {});
     spawnWalker();
   }
 
@@ -401,6 +425,8 @@ export default async function (ctx) {
     S.screen = 'battle'; S.preview = null;
     const [p1, p2] = S.pick;
     S.fighters = [fighter(p1.m, p1.f, 0), fighter(p2.m, p2.f, 1)];
+    for (const F of S.fighters) F.bag = new Set(S.mode === 'duel' || !F.side ? S.items.map(i => i.slug) : []);  // l'ordinateur n'a pas de sac
+    startMusic();
     const needs = S.fighters.flatMap(F => [F.m.marche.image, ...Object.values(F.m.animations).map(a => a.image),
       ...F.f.attaques.flatMap(a => [a.image, a.effet])].map(p => img(lib(F.m, F.f.dossier + p)).ready)
       .concat(F.m.slug === 'neome' ? Object.keys(SIG).map(v => img(`${U}ui/neome/${v}.png`).ready) : []));
@@ -422,11 +448,20 @@ export default async function (ctx) {
       acts.innerHTML = F.card.attaques.map((a, i) => {
         const foe = S.fighters[1 - F.side], e = a.effet ? 1 : effect(a, foe);
         return `<button class="ar-btn dark ar-act" data-a="${i}"><b>${i + 1}. ${esc(a.nom)}</b><small>${esc(a.element)} · ${GENRE[a.genre] || esc(a.genre)} · ${moveInfo(a)}${e === 0 ? ' · aucun effet' : e >= 4 ? ' · super efficace ×4' : e > 1 ? ' · efficace' : e < 1 ? ' · peu efficace' : ''}</small></button>`;
-      }).join('') + `<button class="ar-btn dark ar-act" data-a="garde"><b>${n + 1}. Garde</b><small>moitié moins de dégâts</small></button>`;
+      }).join('') + `<button class="ar-btn dark ar-act" data-a="garde"><b>${n + 1}. Garde</b><small>moitié moins de dégâts</small></button>`
+        + (F.bag.size ? `<button class="ar-btn dark ar-act" data-a="sac"><b>${n + 2}. Sac</b><small>${F.bag.size} objet${F.bag.size > 1 ? 's' : ''}</small></button>` : '');
+      acts.classList.toggle('many', n + (F.bag.size ? 2 : 1) > 3);
       const pickIt = v => { acts.innerHTML = ''; view.removeEventListener('keydown', key); done(v); };
-      const key = e => { const k = +e.key; if (k >= 1 && k <= n) pickIt(k - 1); if (k === n + 1) pickIt('garde'); };
+      const bag = () => {  // le sac : un objet = le tour de la créature
+        const list = S.items.filter(i => F.bag.has(i.slug));
+        acts.innerHTML = list.map((it, i) => `<button class="ar-btn dark ar-act ar-item" data-i="${i}"><img src="${U}obj/${encodeURIComponent(it.slug)}/${it.icone}" alt=""><b>${esc(it.nom)}</b><small>${esc(it.combat.texte)}</small></button>`).join('')
+          + `<button class="ar-btn dark ar-act" data-back="1"><b>Retour</b></button>`;
+        $$('#acts [data-i]').forEach(b => b.onclick = () => pickIt({ item: list[+b.dataset.i] }));
+        $('#acts [data-back]').onclick = () => { view.removeEventListener('keydown', key); chooseAction(F, label).then(done); };
+      };
+      const key = e => { const k = +e.key; if (k >= 1 && k <= n) pickIt(k - 1); if (k === n + 1) pickIt('garde'); if (k === n + 2 && F.bag.size) bag(); };
       view.addEventListener('keydown', key);
-      $$('#acts [data-a]').forEach(b => b.onclick = () => pickIt(b.dataset.a === 'garde' ? 'garde' : +b.dataset.a));
+      $$('#acts [data-a]').forEach(b => b.onclick = () => b.dataset.a === 'sac' ? bag() : pickIt(b.dataset.a === 'garde' ? 'garde' : +b.dataset.a));
       view.querySelector('.ar').focus();
     });
   }
@@ -447,6 +482,7 @@ export default async function (ctx) {
         F.acted = true;
         if (await blocked(F)) { if (F.hp <= 0) { await knockOut(F, T); return; } continue; }
         if (act === 'garde') { say(`${F.name} se met en garde.`); await sleep(650); continue; }
+        if (act?.item) { await useItem(F, act.item); continue; }
         await attack(F, act, T);
         if (T.hp <= 0) { await knockOut(T, F); return; }
         if (F.hp <= 0) { await knockOut(F, T); return; }  // le contrecoup
@@ -695,7 +731,7 @@ export default async function (ctx) {
     result(winner);
   }
   function result(W2) {
-    S.screen = 'result';
+    S.screen = 'result'; stopMusic();
     const who = S.mode === 'duel' ? `Joueur ${W2.side + 1} gagne !` : W2.side === 0 ? 'Victoire !' : 'Défaite…';
     const portrait = W2.m.portrait ? `<img class="ar-portrait big" src="${lib(W2.m, W2.f.dossier + 'portrait.png')}" alt="">` : '';
     ui.innerHTML = `<div class="ar-result"><div class="ar-banner ${W2.side === 0 || S.mode === 'duel' ? 'win' : 'lose'}">${who}</div>
