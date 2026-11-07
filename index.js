@@ -260,7 +260,7 @@ export default async function (ctx) {
       if (!loaded(e) || dt < 0) continue;
       const i = o.loop ? Math.floor(dt / o.ms) % 10 : Math.min(9, Math.floor(dt / o.ms)), k = o.travel ? Math.min(1, dt / o.travel) : 0;
       g.save(); g.translate(Math.round(o.x + ((o.x1 ?? o.x) - o.x) * k), Math.round(o.y)); if (o.flip) g.scale(-1, 1);
-      for (const glow of [0, 1]) {  // l'effet, puis son halo (couleurs additionnées)
+      for (const glow of o.crisp ? [0] : [0, 1]) {  // l'effet, puis son halo (couleurs additionnées) ; pas de halo pour une planche créée : il brûle les détails
         if (glow) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = .55; }
         if (o.beam) g.drawImage(e, i * 128, o.row * 128, 128, 128, 0, -o.size / 2, o.beam, o.size);
         else g.drawImage(e, i * 128, o.row * 128, 128, 128, -o.size / 2, -o.size / 2, o.size, o.size);
@@ -580,12 +580,31 @@ export default async function (ctx) {
     }
     S.dim = 0; play(F, 'attente'); await sleep(250);
   }
+  // une attaque créée dans le Studio : sa planche (10 images x 3 temps : lancer, trajet, impact) et sa mise en scène (show)
+  async function planche(F, T, mv, name) {
+    const P = mv.show, sheet = lib(F.m, F.f.dossier + mv.planche), cy = GROUND - 30, dir = F.side ? -1 : 1, X = [F.x, T.x], t0 = performance.now(), mine = [];
+    S.dim = .6; play(F, name, { noFx: [0, 1, 2, 3] });
+    for (const [at, row, k, size, ms, o] of P.parts) setTimeout(() => {
+      const x = X[k] + dir * (o.dx || 0), p = { t0: performance.now(), sheet, row, x: Math.round(x), y: Math.round(cy + (o.dy || 0)), ms, size, loop: !!(o.beam || o.travel), flip: !!F.side, crisp: true };
+      if (o.travel) { p.x1 = T.x; p.travel = o.travel; }
+      if (o.beam) p.beam = Math.max(20, Math.abs(T.x - x) - 10);
+      S.sig.push(p); mine.push(p);
+      if (o.until) setTimeout(() => { S.sig = S.sig.filter(q => q !== p); }, o.until - at);
+    }, at);
+    for (const [at, k, r1, c, ms, w] of P.rings) S.rings.push({ x: X[k], y: cy - 6, r0: 4, r1, c, ms, w, flat: .55, t0: t0 + at });
+    await sleep(P.hitAt);
+    S.flash = performance.now() + 90; S.flashC = '255,236,255';
+    if (reach(mv) === 'soi') await support(F, mv); else await hit(F, mv, T);
+    await sleep(Math.max(0, P.len - (performance.now() - t0)));
+    S.sig = S.sig.filter(q => !mine.includes(q)); S.dim = 0; play(F, 'attente'); await sleep(250);
+  }
   async function attack(F, n, T) {
     const mv = F.card.attaques[n], anim = F.f.attaques[n], name = 'attaque' + (n + 1), kind = reach(mv);
     const ranged = kind === 'distance', still = kind !== 'contact';  // zone et soutien : sans bouger
     say(`${F.name} lance ${mv.nom} !`);
     const sv = mv.visuel || anim.visuel;
     if (F.m.slug === 'neome' && SIG[sv]) return signature(F, T, mv, name, sv);
+    if (mv.planche && mv.show) return planche(F, T, mv, name);
     const ms = anim.ms, hitAt = ms[0] + ms[1];
     if (kind === 'soi') {
       play(F, name);
