@@ -3,7 +3,7 @@
 const ID = 'neodex.arene', U = 'neoplugin://' + ID + '/';
 const W = 320, H = 180, GROUND = 124;
 const RAR = ['commun', 'peu commun', 'rare', 'épique', 'légendaire', '???'];  // ??? : la créature unique, n° 0
-const ELEMENTS = ['feu', 'eau', 'plante', 'vent', 'roche', 'glace', 'foudre', 'lumière', 'ombre', 'esprit', 'acier', 'poison'];
+const ELEMENTS = ['feu', 'eau', 'plante', 'vent', 'roche', 'glace', 'foudre', 'lumière', 'ombre', 'esprit', 'acier', 'poison', 'insecte', 'fée', 'son'];
 const GENRE = { griffe: 'griffes', morsure: 'morsure', charge: 'charge', fouet: 'fouet', corne: 'corne', dard: 'dard', etreinte: 'étreinte',
   projectile: 'projectile', souffle: 'souffle', rayon: 'rayon', cri: 'cri', rafale: 'rafale', pluie: 'pluie', onde: 'onde',
   explosion: 'explosion', soin: 'soin', renfort: 'renfort' };
