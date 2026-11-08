@@ -1,7 +1,7 @@
 {
   "id": "neodex.arene",
   "name": "NeoBestiary Arène",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "author": "NDesumeur",
   "description": "Combats au tour par tour entre les créatures de NeoBestiary Studio, contre l'ordinateur ou à deux sur le même PC. Chaque créature a 2 à 4 attaques tirées de 204 techniques : statuts (brûlure, poison, gel, sommeil, paralysie…), crans de statistiques, précision, coups multiples, vol de vie, soins et renforts, avec une table des types de ×4 à ×¼. Garde, variantes de couleur, palmarès, et NeoMe avec ses attaques signature.",
   "icon": "icon.png",
