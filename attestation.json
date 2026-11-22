@@ -1,9 +1,9 @@
 {
   "pluginId": "neodex.arene",
   "repo": "NDesumeur/neodex-plugin-arene",
-  "version": "1.5.8",
-  "sha256": "40936a0a79e2677ed7fa3cb6e5729017bedff1b43941df3fbb1a2f99bdf2b629",
-  "approvedAt": "2026-11-19T23:26:41.547Z",
+  "version": "1.6.0",
+  "sha256": "a8c4da18fe65a2368dbdc8bb02bdc172e75f1fa2267855a2c092da83d737098f",
+  "approvedAt": "2026-11-22T19:05:24.642Z",
   "neobase": ">=4.1.0",
-  "signature": "83sXfxrXhWzOm2dZMl3HecFWzOIr9nJZ8UDVdQdwaMeturECmbYdlg4IhBeDSO+BuLW7kJ1zVtKR2ykHI6gPDg=="
+  "signature": "w68b5wrGBUtd40cgnSpHuSvbga7pT8UnDxNl3p8v5Hb0k2SQYIFuT7QflbtnHCjRJCwFnVYTcEw6hOkij1vzCA=="
 }
