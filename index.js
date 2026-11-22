@@ -54,11 +54,32 @@ const defOf = F => F.card.stats.defense * stage(F, 'defense');
 const speedOf = F => F.card.stats.vitesse * stage(F, 'vitesse') * (F.status?.nom === 'paralysie' ? .5 : 1);
 // chance de toucher (0..1) : précision de l'attaque, crans de précision, éblouissement
 const hitChance = (F, mv) => Math.min(1, (mv.precision || 100) / 100 * stage(F, 'precision') * (F.status?.nom === 'éblouissement' ? 2 / 3 : 1));
+// 1.6.0 : un talent passif par créature, celui de sa fiche s'il y en a un (champ « talent »), sinon tiré de ses statistiques et de son type
+const TALENTS = {
+  rage: { nom: 'Rage', texte: 'frappe 30 % plus fort sous le quart de ses PV' },
+  carapace: { nom: 'Carapace', texte: 'subit 20 % de dégâts en moins tant qu\'elle a plus de la moitié de ses PV' },
+  eclaireur: { nom: 'Éclaireur', texte: 'entre dans l\'arène avec sa vitesse +1' },
+  regen: { nom: 'Régénération', texte: 'reprend 1/16 de ses PV à la fin de chaque tour' },
+  chance: { nom: 'Chanceux', texte: 'deux fois plus de coups critiques' },
+  epines: { nom: 'Épines', texte: 'qui la frappe au contact perd 1/8 des dégâts infligés' },
+  intimidation: { nom: 'Intimidation', texte: 'l\'attaque de l\'adversaire baisse de 1 quand elle entre' },
+  pur: { nom: 'Esprit clair', texte: 'ne s\'endort jamais et n\'est jamais confuse' },
+};
+function talentOf(card, type) {
+  if (TALENTS[card.talent]) return card.talent;
+  const s = card.stats, t = String(type || ''), best = ['attaque', 'defense', 'vitesse', 'pv'].sort((a, b) => (s[b] || 0) - (s[a] || 0))[0];
+  if (/esprit|lumière|temps/.test(t)) return 'pur';
+  if (/ombre|poison/.test(t)) return 'intimidation';
+  if (/plante|insecte|acier/.test(t) && best === 'defense') return 'epines';
+  if (/foudre|vent|son/.test(t) && best !== 'pv') return 'chance';
+  return { attaque: 'rage', defense: 'carapace', vitesse: 'eclaireur', pv: 'regen' }[best];
+}
 function damage(att, move, def, roll = Math.random(), critRoll = Math.random()) {
   const stab = String(att.type || '').split(' et ').includes(move.element) ? 1.2 : 1;  // un type double (« ombre et lumière ») compte ses deux éléments
-  const crit = critRoll < (move.critique || 1) / 16 ? 1.5 : 1;
+  const crit = critRoll < (move.critique || 1) / 16 * (att.talent === 'chance' ? 2 : 1) ? 1.5 : 1;
+  const tal = (att.talent === 'rage' && att.hp < att.max / 4 ? 1.3 : 1) * (def.talent === 'carapace' && def.hp > def.max / 2 ? .8 : 1);
   const base = move.puissance * (atkOf(att) / Math.max(1, defOf(def))) * .45;
-  const dmg = effect(move, def) === 0 ? 0 : Math.max(1, Math.round(base * stab * effect(move, def) * (.9 + .15 * roll) * crit * (def.guard ? .5 : 1)));
+  const dmg = effect(move, def) === 0 ? 0 : Math.max(1, Math.round(base * stab * effect(move, def) * (.9 + .15 * roll) * crit * tal * (def.guard ? .5 : 1)));
   return { dmg, crit: crit > 1, eff: effect(move, def) };
 }
 function cpuChoice(me, foe, rnd = Math.random) {  // l'ordinateur : le coup le plus fort, un soin ou un renfort à propos
@@ -79,6 +100,35 @@ function cpuChoice(me, foe, rnd = Math.random) {  // l'ordinateur : le coup le p
   });
   return best;
 }
+
+{ const c = (st, x = {}) => ({ card: { stats: { pv: 50, attaque: 50, defense: 50, vitesse: 50, ...st }, attaques: [], faiblesses: [], resistances: [], ...x }, type: '', hp: 100, max: 100 });
+  const mv = { puissance: 60, element: 'feu' }, base = damage(c({}), mv, c({}), .5, 1).dmg;
+  const rage = { ...c({}), talent: 'rage', hp: 20 }, cara = { ...c({}), talent: 'carapace' };
+  console.assert(talentOf(c({ attaque: 90 }).card, 'feu') === 'rage' && talentOf(c({ defense: 90 }).card, 'plante') === 'epines' && talentOf(c({}, { talent: 'regen' }).card, 'feu') === 'regen'
+    && damage(rage, mv, c({}), .5, 1).dmg > base && damage(c({}), mv, cara, .5, 1).dmg < base && damage({ ...c({}), talent: 'chance' }, mv, c({}), .5, .1).crit, 'arène : talents'); }
+// 1.6.0 : les équipes de 3. Ce que la créature d'en face peut faire de pire contre X (le meilleur multiplicateur de ses attaques)
+const threat = (foe, X) => Math.max(1, ...foe.card.attaques.filter(a => !a.effet).map(a => effect(a, X)));
+function cpuNext(bench, foe) {  // après un K.O. : celle qui craint le moins l'adversaire, puis la plus en forme
+  return bench.slice().sort((x, y) => threat(foe, x) - threat(foe, y) || y.hp / y.max - x.hp / x.max)[0];
+}
+function cpuSwitch(me, foe, bench, rnd = Math.random) {  // changer si l'adversaire est très efficace contre elle et qu'une autre tient mieux
+  if (threat(foe, me) < 2 || rnd() > .6) return null;
+  const b = cpuNext(bench.filter(x => x.hp > x.max * .5), foe);
+  return b && threat(foe, b) < threat(foe, me) ? b : null;
+}
+{ const mk = (mult, hp = 100) => ({ card: { attaques: [{ element: 'feu' }], multiplicateurs: mult, faiblesses: [], resistances: [] }, hp, max: 100 }), fire = mk({});
+  const weak = mk({ feu: 2 }), ok = mk({ feu: .5 }), tired = mk({ feu: .5 }, 20);
+  console.assert(cpuNext([weak, ok], fire) === ok && cpuSwitch(weak, fire, [ok, tired], () => 0) === ok && cpuSwitch(ok, fire, [weak], () => 0) === null && cpuSwitch(weak, fire, [tired], () => 0) === null, "arène : choix de l'ordinateur"); }
+
+// le Draft : 9 créatures tirées au sort, chaque camp en prend 3 à tour de rôle (1, 2, 2, 1 : le serpent)
+const DRAFT_ORDER = [0, 1, 1, 0, 0, 1];
+function cpuDraft(free, theirs, rnd = Math.random) {  // la plus solide, et celle qui fait le plus mal à l'équipe d'en face
+  const F = c => ({ card: c.f.combat }), st = c => ['pv', 'attaque', 'defense', 'vitesse'].reduce((v, k) => v + (c.f.combat.stats[k] || 0), 0);
+  return free.map(c => [c, st(c) + 25 * theirs.reduce((v, x) => v + threat(F(c), F(x)) - threat(F(x), F(c)), 0) + rnd() * 15]).sort((a, b) => b[1] - a[1])[0][0];
+}
+{ const mk = (el, mult, s = 50) => ({ f: { combat: { stats: { pv: s, attaque: s, defense: s, vitesse: s }, attaques: [{ element: el }], multiplicateurs: mult, faiblesses: [], resistances: [] } } });
+  const them = [mk('plante', {})], water = mk('eau', { plante: 2 }), fire = mk('feu', { plante: .5 }), big = mk('roche', {}, 60);
+  console.assert(cpuDraft([water, fire], them, () => 0) === fire && cpuDraft([water, big], [], () => 0) === big, "arène : choix du draft"); }
 
 export default async function (ctx) {
   const view = ctx.view;
@@ -175,12 +225,12 @@ export default async function (ctx) {
   // ---------------------------------------------------------------- combattants
   function fighter(m, f, side) {
     const card = f.combat, max = hpMax(card);
-    return { m, f, card, side, type: typeOf(m, f), name: f.nom, hp: max, max, show: max, guard: false, status: null, st: {},
+    return { m, f, card, side, type: typeOf(m, f), talent: talentOf(card, typeOf(m, f)), name: f.nom, hp: max, max, show: max, guard: false, status: null, st: {},
       x: side ? W + 40 : -40, home: side ? 248 : 72, dir: side ? 'gauche' : 'droite', anim: { name: 'attente', t0: 0 }, fx: null, alpha: 1 };
   }
   const row = (F, d) => F.m.directions.indexOf(d || F.dir);
   function frameOf(F, t) {  // l'image en cours : planche, colonne, ligne (+ effet éventuel)
-    const a = F.anim, dt = t - a.t0, dossier = F.f.dossier;
+    const a = F.anim, dossier = F.f.dossier, slow = a.name === 'attente' ? { gel: .35, sommeil: .5 }[F.status?.nom] || 1 : 1, dt = (t - a.t0) * slow;
     if (a.name === 'marche') {
       const k = F.m.marche.ordre[Math.floor(dt / F.m.marche.ms) % F.m.marche.ordre.length];
       return { sheet: lib(F.m, dossier + F.m.marche.image), col: F.m.marche.images.indexOf(k) };
@@ -190,13 +240,14 @@ export default async function (ctx) {
       let i = 0, acc = 0;
       while (i < mv.ms.length - 1 && dt >= acc + mv.ms[i]) acc += mv.ms[i++];
       const dec = mv.decalages[F.dir]?.[i];
-      return { sheet: lib(F.m, dossier + mv.image), col: i, fx: dec?.visible && !a.noFx?.includes(i) ? { sheet: lib(F.m, dossier + mv.effet), x: dec.x, y: dec.y } : null };
+      return { sheet: lib(F.m, dossier + mv.image), col: i, bx: dec?.cx || 0, by: dec?.cy || 0, fx: dec?.visible && !a.noFx?.includes(i) ? { sheet: lib(F.m, dossier + mv.effet), x: dec.x, y: dec.y } : null };
     }
     const an = F.m.animations[a.name], ms = an.ms;
     let k = dt;
     if (a.name === 'attente') k = dt % ms.reduce((x, y) => x + y, 0);
     let i = 0;
     while (i < ms.length - 1 && k >= ms[i]) k -= ms[i++];
+    if (a.name === 'attente' && F.status?.nom === 'sommeil') i = ms.length - 1;  // il dort : les yeux fermés (l'image du clignement)
     return { sheet: lib(F.m, dossier + an.image), col: i };
   }
   function drawFighter(F, t) {
@@ -207,7 +258,23 @@ export default async function (ctx) {
     shadow(F.x);
     const im = img(fr.sheet);
     g.globalAlpha = F.alpha;
-    if (loaded(im)) g.drawImage(im, fr.col * 64, r * 64, 64, 64, sx, sy, 64, 64);
+    const kick = F.kick && t < F.kick.t1 ? Math.round(F.kick.d * (F.kick.t1 - t) / F.kick.ms) * (F.side ? 1 : -1) : 0;  // il recule sous le coup
+    const st = F.status?.nom, idle = F.anim.name === 'attente';
+    let w = 64, h = 64;
+    if (F.guard && idle) { w = 66; h = 58; }  // garde : accroupi, le dos rond
+    else if (st === 'sommeil' && idle) h = 64 + Math.round(Math.sin(t / 700) * 1.5);  // il dort : un souffle lent
+    const bx = sx + (fr.bx || 0) + kick - (w - 64) / 2, by = sy + (fr.by || 0) + 64 - h;
+    if (loaded(im)) {
+      g.drawImage(im, fr.col * 64, r * 64, 64, 64, bx, by, w, h);  // le corps bondit vers la cible
+      const tint = F.flash > t ? ['255,255,255', .85] : st === 'brûlure' ? (t % 900 < 160 ? ['255,120,30', .5] : null)
+        : st === 'gel' ? ['120,190,255', .38] : st === 'poison' ? ['120,220,80', .22 + .08 * Math.sin(t / 300)] : null;
+      if (tint) tinted(im, fr.col * 64, r * 64, bx, by, w, h, tint[0], tint[1]);
+    }
+    if (st === 'sommeil' && F.hp > 0) {  // des « z » qui montent
+      g.fillStyle = 'rgba(230,230,255,.85)'; g.font = '10px monospace';
+      for (let k = 0; k < 2; k++) { const u = ((t / 1400) + k / 2) % 1; g.globalAlpha = F.alpha * (1 - u); g.fillText('z', sx + 40 + u * 8 + k * 4, sy + 14 - u * 14); }
+      g.globalAlpha = F.alpha;
+    }
     if (fr.fx) { const e = img(fr.fx.sheet); if (loaded(e)) g.drawImage(e, fr.col * 64, r * 64, 64, 64, sx + fr.fx.x, sy + fr.fx.y, 64, 64); }
     g.globalAlpha = 1;
     if (F.guard) {  // garde : un bouclier de lumière
@@ -215,6 +282,41 @@ export default async function (ctx) {
       const fx = F.side ? sx + 6 : sx + 54;
       for (let y = 0; y < 30; y += 2) g.fillRect(fx, sy + 24 + y, 3, 1);
     }
+  }
+  // la même image recolorée par-dessus (éclair du coup, couleur d'un statut), sur un petit calque à part
+  const tintCv = document.createElement('canvas'); tintCv.width = tintCv.height = 64;
+  function tinted(im, cx, cy, x, y, w, h, rgb, a) {
+    const c = tintCv.getContext('2d');
+    c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, 64, 64); c.drawImage(im, cx, cy, 64, 64, 0, 0, 64, 64);
+    c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(${rgb},${a})`; c.fillRect(0, 0, 64, 64);
+    g.drawImage(tintCv, 0, 0, 64, 64, x, y, w, h);
+  }
+  // (21) le son d'une attaque, synthétisé : le geste donne la forme (choc, ton qui glisse, cri), l'élément la couleur
+  const SFX_EL = { feu: [180, 'sawtooth'], eau: [320, 'sine'], glace: [900, 'triangle'], foudre: [600, 'square'], vent: [500, 'sine'],
+    roche: [90, 'square'], acier: [700, 'square'], insecte: [380, 'sawtooth'], fee: [1000, 'sine'], son: [520, 'sine'], temps: [350, 'triangle'],
+    encre: [140, 'sawtooth'], gravite: [70, 'sine'], plante: [260, 'triangle'], poison: [220, 'sawtooth'], lumiere: [1200, 'sine'],
+    ombre: [110, 'sawtooth'], esprit: [440, 'sine'], normal: [300, 'triangle'] };
+  const SFX_HIT = ['griffe', 'morsure', 'charge', 'corne', 'dard', 'fouet', 'etreinte'];
+  let actx;
+  function sfx(genre, element, strong) {
+    try {
+      actx = actx || new AudioContext();
+      const a = actx, now = a.currentTime, key = String(element || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(' ')[0];
+      const [f0, wave] = SFX_EL[key] || SFX_EL.normal, vol = a.createGain(), len = SFX_HIT.includes(genre) ? .18 : genre === 'cri' ? .5 : .35;
+      vol.gain.setValueAtTime(strong ? .45 : .28, now); vol.gain.exponentialRampToValueAtTime(.001, now + len); vol.connect(a.destination);
+      if (SFX_HIT.includes(genre) || ['explosion', 'pluie', 'onde'].includes(genre)) {  // un choc : du bruit filtré
+        const n = a.createBufferSource(), buf = a.createBuffer(1, Math.ceil(a.sampleRate * len), a.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** (genre === 'griffe' ? 3 : 1.5);
+        const flt = a.createBiquadFilter(); flt.type = genre === 'griffe' || genre === 'dard' ? 'highpass' : 'lowpass';
+        flt.frequency.value = genre === 'explosion' || genre === 'onde' ? 400 : f0 * 4; n.buffer = buf; n.connect(flt).connect(vol); n.start(now);
+      }
+      if (!SFX_HIT.includes(genre) || genre === 'morsure') {  // un ton : il glisse (rayon, souffle) ou vibre (cri)
+        const o = a.createOscillator(); o.type = wave; o.frequency.setValueAtTime(f0 * (genre === 'rayon' ? 2 : 1), now);
+        o.frequency.exponentialRampToValueAtTime(Math.max(40, f0 * (genre === 'soin' || genre === 'renfort' ? 2 : .5)), now + len);
+        if (genre === 'cri') { const l = a.createOscillator(), lg = a.createGain(); l.frequency.value = 18; lg.gain.value = f0 * .2; l.connect(lg).connect(o.frequency); l.start(now); l.stop(now + len); }
+        o.connect(vol); o.start(now); o.stop(now + len);
+      }
+    } catch {}
   }
   const play = (F, name, extra = {}) => { F.anim = { name, t0: performance.now(), ...extra }; };
   const animMs = (F, name) => name.startsWith('attaque') ? F.f.attaques[+name.slice(7) - 1].ms.reduce((a, b) => a + b, 0)
@@ -342,6 +444,7 @@ export default async function (ctx) {
         ${btn('mCpu', 'Combat contre l\'ordinateur', 'go')}
         ${btn('mDuel', 'Duel à deux joueurs')}
         ${btn('mRec', 'Palmarès')}
+        <label class="ar-hint">Format <select id="mTeam" class="ar-sel"><option value="1">Une créature chacun</option><option value="3">Équipes de 3 (changements en cours de combat)</option><option value="9">Draft : 9 créatures, chacun en prend 3 à tour de rôle</option></select></label>
         <label class="ar-hint">Musique du combat <select id="mMus" class="ar-sel"><option value="">Aucune</option>${S.musics.length ? `<option value="*">Au hasard (tendue ou épique d'abord)</option>` : ''}${S.musics.map(m => `<option value="${esc(m.slug)}">${esc(m.nom)}</option>`).join('')}</select></label>
         <div class="ar-hint">${S.items.length ? `Sac : ${S.items.length} objet${S.items.length > 1 ? 's' : ''} de combat du Studio, chacun utilisable une fois par combat.` : 'Crée de la nourriture, des potions ou des armes dans le Studio : elles iront dans ton sac.'}</div>
       </div>
@@ -352,6 +455,8 @@ export default async function (ctx) {
     $('#mDuel').onclick = () => select('duel');
     $('#mRec').onclick = records;
     $('#mMus').value = S.musics.some(m => m.slug === S.prefs.music) || S.prefs.music === '*' ? S.prefs.music : '';
+    $('#mTeam').value = [3, 9].includes(S.prefs.team) && n >= 3 ? String(S.prefs.team) : '1'; $('#mTeam').disabled = n < 3;
+    $('#mTeam').onchange = e => call('prefs', { team: +e.target.value }).then(p => { S.prefs = p; }).catch(() => {});
     $('#mMus').onchange = e => call('prefs', { music: e.target.value }).then(p => { S.prefs = p; }).catch(() => {});
     spawnWalker();
   }
@@ -365,17 +470,22 @@ export default async function (ctx) {
       <div class="ar-dhead"><b>${esc(f.nom)}</b><span class="ar-rare r${r}">${esc(k.rarete)}</span>${typeChips(typeOf(m, f))}</div>
       <div class="ar-stats">${[['pv', 'PV'], ['attaque', 'Attaque'], ['defense', 'Défense'], ['vitesse', 'Vitesse']].map(([s, l]) =>
         `<span>${l}</span><i><b style="width:${Math.min(100, k.stats[s])}%"></b></i><em>${k.stats[s]}</em>`).join('')}</div>
+      <div class="ar-weak">Talent : <span class="ar-chip good">${esc(TALENTS[talentOf(k, typeOf(m, f))].nom)}</span> ${esc(TALENTS[talentOf(k, typeOf(m, f))].texte)}</div>
       <div class="ar-weak">Faible : ${chips(k.faiblesses.map(e => e + (XM[k.multiplicateurs?.[e]] ? ' ' + XM[k.multiplicateurs[e]] : '')), 'bad')}<br>Résiste : ${chips(k.resistances.map(e => e + (XM[k.multiplicateurs?.[e]] ? ' ' + XM[k.multiplicateurs[e]] : '')), 'good')}${(k.immunites || []).length ? `<br>Immunisé : ${chips(k.immunites, 'good')}` : ''}</div>
       ${k.attaques.map((a, i) => `<div class="ar-move"><b>${i + 1}. ${esc(a.nom)}</b> <span class="ar-chip">${esc(a.element)}</span> <span class="ar-chip">${GENRE[a.genre] || esc(a.genre)}</span> <em>${moveInfo(a)}</em></div>`).join('')}
     </div>`;
   }
 
   function select(mode) {
-    S.mode = mode; S.pick = []; S.screen = 'select'; S.walkers = [];
+    S.mode = mode; S.pick = []; S.screen = 'select'; S.walkers = []; S.size = [3, 9].includes(S.prefs.team) && S.roster.length >= 3 ? 3 : 1;
+    const all = S.roster.flatMap(m => m.formes.map(f => ({ m, f }))).sort(() => Math.random() - .5);
+    S.draft = S.prefs.team === 9 && all.length >= 9;
+    if (S.draft) { S.pool = all.slice(0, 9); S.dt = [[], []]; S.cur = S.pool[0]; return draftScreen(); }
     pickScreen();
   }
   function pickScreen() {
-    const who = S.pick.length === 0 ? (S.mode === 'duel' ? 'Joueur 1' : 'Ta créature') : (S.mode === 'duel' ? 'Joueur 2' : 'L\'adversaire');
+    const k = S.size, side = S.pick.length < k ? 0 : 1, nth = k > 1 ? ` (${S.pick.length % k + 1} sur ${k})` : '';
+    const who = (side === 0 ? (S.mode === 'duel' ? 'Joueur 1' : k > 1 ? 'Ton équipe' : 'Ta créature') : (S.mode === 'duel' ? 'Joueur 2' : 'L\'adversaire')) + nth;
     S.cur = S.cur && S.roster.includes(S.cur.m) ? S.cur : { m: S.roster[0], f: S.roster[0].formes[0] };
     ui.innerHTML = `<div class="ar-select">
       <div class="ar-top"><span class="ar-who">${who} : choisis une créature</span>${btn('sBack', 'Retour')}</div>
@@ -387,16 +497,39 @@ export default async function (ctx) {
     $('#sBack').onclick = () => S.pick.length ? (S.pick.pop(), pickScreen()) : menu();
     $('#sRand').onclick = () => { const m = S.roster[Math.floor(Math.random() * S.roster.length)]; S.cur = { m, f: m.formes[Math.floor(Math.random() * m.formes.length)] }; showCur(); };
     $('#sGo').onclick = () => {
+      if (S.pick.slice(side * S.size).some(p => p.m === S.cur.m && p.f === S.cur.f)) return say2('Déjà dans cette équipe');
       S.pick.push(S.cur);
-      if (S.pick.length === 2) return battle();
-      if (S.mode === 'cpu') { $('#sRand').click(); }
+      if (S.mode === 'cpu' && S.pick.length === S.size) {  // l'équipe de l'ordinateur : au hasard, sans doublon
+        const all = S.roster.flatMap(m => m.formes.map(f => ({ m, f }))).sort(() => Math.random() - .5);
+        for (const c of all) if (S.pick.length < 2 * S.size && !S.pick.slice(S.size).some(p => p.m === c.m && p.f === c.f)) S.pick.push(c);
+      }
+      if (S.pick.length >= 2 * S.size) return battle();
       pickScreen();
     };
+    const say2 = m => { $('.ar-who').textContent = m; setTimeout(pickScreen, 900); };
     showCur();
+  }
+  function draftScreen() {
+    const n = S.dt[0].length + S.dt[1].length;
+    if (n >= 6) { S.pick = [...S.dt[0], ...S.dt[1]]; return battle(); }
+    const side = DRAFT_ORDER[n], cpu = S.mode === 'cpu' && side === 1, owner = c => S.dt[0].includes(c) ? 0 : S.dt[1].includes(c) ? 1 : -1, free = S.pool.filter(c => owner(c) < 0);
+    if (owner(S.cur) >= 0) S.cur = free[0];
+    const who = cpu ? "L'ordinateur choisit…" : `${S.mode === 'duel' ? `Joueur ${side + 1}` : 'À toi'} : prends une créature (${S.dt[side].length + 1} sur 3)`;
+    ui.innerHTML = `<div class="ar-select">
+      <div class="ar-top"><span class="ar-who">Draft · ${who}</span>${btn('sBack', 'Retour')}</div>
+      <div class="ar-grid" id="grid">${S.pool.map((c, i) => `<button class="ar-cell r${RAR.indexOf(c.f.combat.rarete)}${owner(c) >= 0 ? ' taken t' + owner(c) : ''}" data-p="${i}" title="${esc(c.f.nom)}">
+        <img src="${lib(c.m, c.f.dossier + 'sheet.png')}" style="object-position:-64px 0" alt=""><span>${esc(c.f.nom)}</span></button>`).join('')}</div>
+      <div class="ar-side" id="side"></div>
+      <div class="ar-bottom">${cpu ? '' : btn('sGo', 'Prendre', 'go')}</div></div>`;
+    $$('#grid .ar-cell').forEach(b => b.onclick = () => { S.cur = S.pool[+b.dataset.p]; showCur(); });
+    $('#sBack').onclick = menu;
+    showCur();
+    if (cpu) setTimeout(() => { if (S.screen === 'select' && S.draft) { S.dt[1].push(cpuDraft(free, S.dt[0])); draftScreen(); } }, 900);
+    else $('#sGo').onclick = () => { if (owner(S.cur) >= 0) return; S.dt[side].push(S.cur); draftScreen(); };
   }
   function showCur() {
     const { m, f } = S.cur;
-    $$('#grid .ar-cell').forEach(b => b.classList.toggle('on', S.roster[+b.dataset.i] === m && m.formes[+b.dataset.j] === f));
+    $$('#grid .ar-cell').forEach(b => b.classList.toggle('on', b.dataset.p != null ? S.pool[+b.dataset.p] === S.cur : S.roster[+b.dataset.i] === m && m.formes[+b.dataset.j] === f));
     const portrait = m.portrait ? `<img class="ar-portrait" src="${lib(m, f.dossier + 'portrait.png')}" alt="">` : '';
     $('#side').innerHTML = portrait + cardHtml(m, f);
     S.preview = fighter(m, f, 0); S.preview.x = 160; S.preview.dir = 'bas';
@@ -405,9 +538,9 @@ export default async function (ctx) {
   // ---------------------------------------------------------------- combat
   function hud() {
     const [a, b] = S.fighters, bar = (F, i) => `<div class="ar-hp ${i ? 'right' : ''}">
-      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span>${typeChips(F.type)}${F.status ? `<span class="ar-chip bad">${esc(F.status.nom)}</span>` : ''}${Object.entries(F.st).filter(([, v]) => v).map(([k, v]) => `<span class="ar-chip ${v > 0 ? 'good' : 'bad'}">${STAT_SHORT[k]} ${v > 0 ? '+' : ''}${v}</span>`).join('')}</div>
+      <div class="ar-hpname"><b>${esc(F.name)}</b><span class="ar-rare r${RAR.indexOf(F.card.rarete)}">${esc(F.card.rarete)}</span>${typeChips(F.type)}<span class="ar-chip tal" title="${esc(TALENTS[F.talent].texte)}">${esc(TALENTS[F.talent].nom)}</span>${F.status ? `<span class="ar-chip bad">${esc(F.status.nom)}</span>` : ''}${Object.entries(F.st).filter(([, v]) => v).map(([k, v]) => `<span class="ar-chip ${v > 0 ? 'good' : 'bad'}">${STAT_SHORT[k]} ${v > 0 ? '+' : ''}${v}</span>`).join('')}</div>
       <i><b class="${F.show / F.max < .25 ? 'low' : F.show / F.max < .5 ? 'mid' : ''}" style="width:${Math.max(0, F.show / F.max * 100)}%"></b></i>
-      <em>${Math.max(0, Math.ceil(F.show))} / ${F.max}</em></div>`;
+      <em>${Math.max(0, Math.ceil(F.show))} / ${F.max}</em>${S.teams?.[i]?.length > 1 ? `<span class="ar-team">${S.teams[i].map(X => `<s class="${X.hp <= 0 ? 'ko' : X === F ? 'on' : ''}" title="${esc(X.name)}"></s>`).join('')}</span>` : ''}</div>`;
     $('#hud').innerHTML = bar(a, 0) + bar(b, 1);
   }
   async function drain(F, to) {  // la barre de vie descend doucement
@@ -423,11 +556,12 @@ export default async function (ctx) {
 
   async function battle() {
     S.screen = 'battle'; S.preview = null;
-    const [p1, p2] = S.pick;
-    S.fighters = [fighter(p1.m, p1.f, 0), fighter(p2.m, p2.f, 1)];
-    for (const F of S.fighters) F.bag = new Set(S.mode === 'duel' || !F.side ? S.items.map(i => i.slug) : []);  // l'ordinateur n'a pas de sac
+    const k = S.pick.length / 2;
+    S.teams = [0, 1].map(s => S.pick.slice(s * k, s * k + k).map(p => fighter(p.m, p.f, s)));
+    for (const T of S.teams) { const bag = new Set(S.mode === 'duel' || !T[0].side ? S.items.map(i => i.slug) : []); for (const F of T) F.bag = bag; }  // un sac par camp ; l'ordinateur n'en a pas
+    S.fighters = S.teams.map(T => T[0]);
     startMusic();
-    const needs = S.fighters.flatMap(F => [F.m.marche.image, ...Object.values(F.m.animations).map(a => a.image),
+    const needs = S.teams.flat().flatMap(F => [F.m.marche.image, ...Object.values(F.m.animations).map(a => a.image),
       ...F.f.attaques.flatMap(a => [a.image, a.effet])].map(p => img(lib(F.m, F.f.dossier + p)).ready)
       .concat(F.m.slug === 'neome' ? Object.keys(SIG).map(v => img(`${U}ui/neome/${v}.png`).ready) : []));
     ui.innerHTML = `<div class="ar-battle"><div class="ar-hudrow" id="hud"></div>
@@ -437,6 +571,7 @@ export default async function (ctx) {
     await Promise.all(S.fighters.map(F => walk(F, F.home, 900)));
     say(`${S.fighters[0].name} affronte ${S.fighters[1].name} !`);
     await sleep(700);
+    for (const F of S.fighters.slice().sort((a, b) => speedOf(b) - speedOf(a))) await entrance(F);
     loop();
   }
   function chooseAction(F, label) {
@@ -449,8 +584,9 @@ export default async function (ctx) {
         const foe = S.fighters[1 - F.side], e = a.effet ? 1 : effect(a, foe);
         return `<button class="ar-btn dark ar-act" data-a="${i}"><b>${i + 1}. ${esc(a.nom)}</b><small>${esc(a.element)} · ${GENRE[a.genre] || esc(a.genre)} · ${moveInfo(a)}${e === 0 ? ' · aucun effet' : e >= 4 ? ' · super efficace ×4' : e > 1 ? ' · efficace' : e < 1 ? ' · peu efficace' : ''}</small></button>`;
       }).join('') + `<button class="ar-btn dark ar-act" data-a="garde"><b>${n + 1}. Garde</b><small>moitié moins de dégâts</small></button>`
-        + (F.bag.size ? `<button class="ar-btn dark ar-act" data-a="sac"><b>${n + 2}. Sac</b><small>${F.bag.size} objet${F.bag.size > 1 ? 's' : ''}</small></button>` : '');
-      acts.classList.toggle('many', n + (F.bag.size ? 2 : 1) > 3);
+        + (F.bag.size ? `<button class="ar-btn dark ar-act" data-a="sac"><b>${n + 2}. Sac</b><small>${F.bag.size} objet${F.bag.size > 1 ? 's' : ''}</small></button>` : '')
+        + (bench(F.side).length ? `<button class="ar-btn dark ar-act" data-a="chg"><b>${n + 2 + (F.bag.size ? 1 : 0)}. Changer</b><small>${bench(F.side).length} <span>en réserve</span></small></button>` : '');
+      acts.classList.toggle('many', n + (F.bag.size ? 2 : 1) + (bench(F.side).length ? 1 : 0) > 3);
       const pickIt = v => { acts.innerHTML = ''; view.removeEventListener('keydown', key); done(v); };
       const bag = () => {  // le sac : un objet = le tour de la créature
         const list = S.items.filter(i => F.bag.has(i.slug));
@@ -459,41 +595,86 @@ export default async function (ctx) {
         $$('#acts [data-i]').forEach(b => b.onclick = () => pickIt({ item: list[+b.dataset.i] }));
         $('#acts [data-back]').onclick = () => { view.removeEventListener('keydown', key); chooseAction(F, label).then(done); };
       };
-      const key = e => { const k = +e.key; if (k >= 1 && k <= n) pickIt(k - 1); if (k === n + 1) pickIt('garde'); if (k === n + 2 && F.bag.size) bag(); };
+      const swap = () => { view.removeEventListener('keydown', key); pickBench(F, true).then(X => X ? done({ swap: X }) : chooseAction(F, label).then(done)); };
+      const key = e => { const k = +e.key; if (k >= 1 && k <= n) pickIt(k - 1); if (k === n + 1) pickIt('garde'); if (k === n + 2 && F.bag.size) bag(); if (k === n + 2 + (F.bag.size ? 1 : 0) && bench(F.side).length) swap(); };
       view.addEventListener('keydown', key);
-      $$('#acts [data-a]').forEach(b => b.onclick = () => b.dataset.a === 'sac' ? bag() : pickIt(b.dataset.a === 'garde' ? 'garde' : +b.dataset.a));
+      $$('#acts [data-a]').forEach(b => b.onclick = () => b.dataset.a === 'sac' ? bag() : b.dataset.a === 'chg' ? swap() : pickIt(b.dataset.a === 'garde' ? 'garde' : +b.dataset.a));
       view.querySelector('.ar').focus();
     });
   }
+  const bench = side => (S.teams?.[side] || []).filter(X => X.hp > 0 && X !== S.fighters[side]);
+  function pickBench(F, cancel) {  // la réserve : une carte par créature encore debout ; rend la créature choisie (ou null : retour)
+    return new Promise(done => {
+      const list = bench(F.side), acts = $('#acts');
+      say(S.mode === 'duel' ? `Joueur ${F.side + 1} : qui entre dans l'arène ?` : "Qui entre dans l'arène ?");
+      acts.classList.toggle('many', list.length + (cancel ? 1 : 0) > 3);
+      acts.innerHTML = list.map((X, i) => `<button class="ar-btn dark ar-act" data-b="${i}"><b>${i + 1}. ${esc(X.name)}</b><small>${esc(X.type)} · ${Math.ceil(X.hp)} / ${X.max} PV${X.status ? ' · ' + esc(X.status.nom) : ''}</small></button>`).join('')
+        + (cancel ? `<button class="ar-btn dark ar-act" data-back="1"><b>Retour</b></button>` : '');
+      const end = X => { view.removeEventListener('keydown', key); acts.innerHTML = ''; done(X); };
+      const key = e => { const k = +e.key; if (k >= 1 && k <= list.length) end(list[k - 1]); if (e.key === 'Escape' && cancel) end(null); };
+      view.addEventListener('keydown', key);
+      $$('#acts [data-b]').forEach(b => b.onclick = () => end(list[+b.dataset.b]));
+      if (cancel) $('#acts [data-back]').onclick = () => end(null);
+      view.querySelector('.ar').focus();
+    });
+  }
+  async function entrance(F) {  // les talents qui jouent quand la créature entre
+    const O = S.fighters[1 - F.side];
+    if (F.talent === 'eclaireur') { say(`${F.name} (Éclaireur) prend les devants !`); await sleep(500); await raise(F, 'vitesse', 1); }
+    if (F.talent === 'intimidation' && O?.hp > 0) { say(`${F.name} intimide ${O.name} !`); await sleep(500); await raise(O, 'attaque', -1); }
+  }
+  async function sendIn(side, X) {  // la créature sur le terrain rentre (ses crans de stats s'effacent), l'autre entre
+    const O = S.fighters[side];
+    if (O.hp > 0) { say(`${O.name}, reviens !`); O.st = {}; O.guard = false; await walk(O, side ? W + 40 : -40, 600); }
+    S.fighters[side] = X; X.x = side ? W + 40 : -40; X.alpha = 1; hud();
+    say(`${X.name}, à toi !`); await walk(X, X.home, 700); await sleep(250); await entrance(X);
+  }
   async function loop() {
-    const [a, b] = S.fighters;
-    while (S.screen === 'battle' && a.hp > 0 && b.hp > 0) {
+    while (S.screen === 'battle') {
+      const [a, b] = S.fighters;
       const ca = await chooseAction(a, S.mode === 'duel' ? `Joueur 1 · ${a.name}` : `Que fait ${a.name} ?`);
       if (S.screen !== 'battle') return;
-      const cb = S.mode === 'duel' ? await chooseAction(b, `Joueur 2 · ${b.name}`) : cpuChoice(b, a);
+      const sw = S.mode === 'duel' ? null : cpuSwitch(b, a, bench(1));
+      const cb = S.mode === 'duel' ? await chooseAction(b, `Joueur 2 · ${b.name}`) : sw ? { swap: sw } : cpuChoice(b, a);
       if (S.screen !== 'battle') return;
+      for (const [s, c] of [[0, ca], [1, cb]]) if (c?.swap) await sendIn(s, c.swap);  // changer passe avant tout, et prend le tour
+      if (await turn(ca?.swap ? null : ca, cb?.swap ? null : cb)) return;
+    }
+  }
+  async function down(T, W2) {  // un K.O. : la suite si son camp a encore quelqu'un ; rend vrai quand le combat est fini
+    const last = !bench(T.side).length;
+    await knockOut(T, W2, last);
+    if (last) return true;
+    const X = S.mode === 'duel' || T.side === 0 ? await pickBench(T, false) : cpuNext(bench(1), W2);
+    await sendIn(T.side, X); return false;
+  }
+  async function turn(ca, cb) {  // rend vrai quand le combat est fini ; une action nulle : la créature vient d'entrer
+    const [a, b] = S.fighters;
       a.guard = ca === 'garde'; b.guard = cb === 'garde';
       const pri = (F, act) => F.card.attaques[act]?.priorite || 0;  // une rafale part avant tout le reste
       const sa = speedOf(a) + 1000 * pri(a, ca), sb = speedOf(b) + 1000 * pri(b, cb);
       const order = sa > sb || (sa === sb && Math.random() < .5) ? [[a, ca, b], [b, cb, a]] : [[b, cb, a], [a, ca, b]];
       a.acted = b.acted = a.flinch = b.flinch = false;
       for (const [F, act, T] of order) {
-        if (F.hp <= 0 || T.hp <= 0) continue;
+        if (act == null || F.hp <= 0 || T.hp <= 0) continue;
         F.acted = true;
-        if (await blocked(F)) { if (F.hp <= 0) { await knockOut(F, T); return; } continue; }
+        if (await blocked(F)) { if (F.hp <= 0) return down(F, T); continue; }
         if (act === 'garde') { say(`${F.name} se met en garde.`); await sleep(650); continue; }
         if (act?.item) { await useItem(F, act.item); continue; }
         await attack(F, act, T);
-        if (T.hp <= 0) { await knockOut(T, F); return; }
-        if (F.hp <= 0) { await knockOut(F, T); return; }  // le contrecoup
+        if (T.hp <= 0) return down(T, F);
+        if (F.hp <= 0) return down(F, T);  // le contrecoup
       }
       a.guard = b.guard = false;
+      for (const F of [a, b]) if (F.talent === 'regen' && F.hp > 0 && F.hp < F.max) {  // Régénération
+        const before = F.hp; F.hp = Math.min(F.max, F.hp + Math.max(1, Math.round(F.max / 16)));
+        pop(F.x - 8, GROUND - 76, '+' + (F.hp - before), 'good'); say(`${F.name} se régénère (+${F.hp - before} PV).`); await drain(F, F.hp); await sleep(300);
+      }
       for (const [F, O] of [[a, b], [b, a]]) {  // fin du tour : brûlure et poison rongent les PV
         if (!(await tick(F))) continue;
-        await knockOut(F, O);
-        return;
+        return down(F, O);
       }
-    }
+      return false;
   }
   async function blocked(F) {  // peur, gel, sommeil, paralysie, confusion : le tour peut sauter
     if (F.flinch) { say(`${F.name} recule de peur et n'attaque pas !`); await sleep(750); return true; }
@@ -635,6 +816,16 @@ export default async function (ctx) {
     S.sig = S.sig.filter(q => !mine.includes(q)); S.dim = 0; play(F, 'attente'); await sleep(250);
   }
   async function attack(F, n, T) {
+    const mv = F.card.attaques[n], rare = RAR.indexOf(mv.rarete) >= 3 && !(F.m.slug === 'neome' && SIG[mv.visuel || F.f.attaques[n].visuel]);
+    if (rare) {
+      say(`${F.name} prépare ${mv.nom}…`);
+      play(F, 'attaque' + (n + 1)); F.anim.t0 = performance.now() + 1e9;  // figé sur l'élan
+      S.dim = .55; S.zoom = { x: F.x, y: GROUND - 30, k: .1, ms: 700, t0: performance.now() };
+      await sleep(600);
+    }
+    try { await attackNow(F, n, T); } finally { if (rare) S.dim = 0; }
+  }
+  async function attackNow(F, n, T) {
     const mv = F.card.attaques[n], anim = F.f.attaques[n], name = 'attaque' + (n + 1), kind = reach(mv);
     const ranged = kind === 'distance', still = kind !== 'contact';  // zone et soutien : sans bouger
     say(`${F.name} lance ${mv.nom} !`);
@@ -643,7 +834,7 @@ export default async function (ctx) {
     if (mv.planche && mv.show) return planche(F, T, mv, name);
     const ms = anim.ms, hitAt = ms[0] + ms[1];
     if (kind === 'soi') {
-      play(F, name);
+      play(F, name); sfx(mv.genre, mv.element);
       await sleep(hitAt);
       await support(F, mv);
       await sleep(Math.max(0, animMs(F, name) - hitAt));
@@ -680,12 +871,19 @@ export default async function (ctx) {
       total += r.dmg;
       T.hp = Math.max(0, T.hp - r.dmg);
       play(T, 'degats');
-      S.shake = performance.now() + (r.crit || r.eff > 1 ? 320 : 180);
+      const strong = r.crit || r.eff > 1, t1 = performance.now();
+      S.shake = t1 + (strong ? 320 : 180);
+      T.kick = { t1: t1 + (strong ? 300 : 200), ms: strong ? 300 : 200, d: T.guard ? 2 : strong ? 8 : 4 }; T.flash = t1 + (strong ? 150 : 90);
+      sfx(mv.genre, mv.element, strong);
       pop(T.x - 8 + 6 * i, GROUND - 76 - 8 * i, '-' + r.dmg, r.crit ? 'crit' : r.eff > 1 ? 'good' : r.eff < 1 ? 'weak' : '');
       if (r.crit) pop(T.x - 18, GROUND - 92, 'Coup critique !', 'crit');
       if (n > 1) await sleep(180);
     }
     r.dmg = total;
+    if (T.talent === 'epines' && reach(mv) === 'contact' && total > 0 && F.hp > 0) {
+      const d = Math.max(1, Math.round(total / 8)); F.hp = Math.max(0, F.hp - d);
+      pop(F.x - 8, GROUND - 76, '-' + d, 'weak'); setTimeout(() => drain(F, F.hp), 0);
+    }
     const words = r.eff === 0 ? ' Ça n\'a aucun effet…' : r.eff >= 4 ? ' C\'est super efficace !' : r.eff > 1 ? ' C\'est très efficace !' : r.eff < 1 ? ' Ce n\'est pas très efficace…' : '';
     say(`${mv.nom} inflige ${r.dmg} dégâts${n > 1 ? ` en ${n} coups` : ''}${T.guard ? ' (garde)' : ''}.${words}`);
     await drain(T, T.hp);
@@ -707,6 +905,8 @@ export default async function (ctx) {
     if (mv.statut && T.hp > 0 && Math.random() * 100 < mv.statut.chance) {
       if (rule.flinch) {
         if (!T.acted) { T.flinch = true; say(`${T.name} est effrayé !`); await sleep(500); }
+      } else if (!T.status && T.talent === 'pur' && ['sommeil', 'confusion'].includes(mv.statut.nom)) {
+        say(`L'esprit clair de ${T.name} le protège de ${mv.statut.nom} !`); await sleep(650);
       } else if (!T.status) {
         T.status = { nom: mv.statut.nom, turns: typeof rule.turns === 'function' ? rule.turns() : rule.turns };
         hud();
@@ -720,25 +920,25 @@ export default async function (ctx) {
     await effects(F, mv, T, false);
     setTimeout(() => { if (T.anim.name === 'degats' && T.hp > 0) play(T, 'attente'); }, animMs(T, 'degats'));
   }
-  async function knockOut(T, winner) {
+  async function knockOut(T, winner, last = true) {
     await sleep(300);
     play(T, 'ko');
     say(`${T.name} est K.O. !`);
     await sleep(animMs(T, 'ko') + 500);
-    T.alpha = 0;
+    T.alpha = 0; hud();
     const w = { slug: winner.m.slug, form: winner.f.id }, l = { slug: T.m.slug, form: T.f.id };
     call('result', { winner: w, loser: l }).then(r => { S.records = r; }).catch(() => {});
-    result(winner);
+    if (last) result(winner);
   }
   function result(W2) {
     S.screen = 'result'; stopMusic();
     const who = S.mode === 'duel' ? `Joueur ${W2.side + 1} gagne !` : W2.side === 0 ? 'Victoire !' : 'Défaite…';
     const portrait = W2.m.portrait ? `<img class="ar-portrait big" src="${lib(W2.m, W2.f.dossier + 'portrait.png')}" alt="">` : '';
     ui.innerHTML = `<div class="ar-result"><div class="ar-banner ${W2.side === 0 || S.mode === 'duel' ? 'win' : 'lose'}">${who}</div>
-      ${portrait}<div class="ar-wname">${esc(W2.name)} remporte le combat avec ${Math.ceil(W2.hp)} PV restants.</div>
+      ${portrait}<div class="ar-wname">${esc(W2.name)} remporte le combat avec ${Math.ceil(W2.hp)} PV restants${S.teams[W2.side].length > 1 ? ` (${S.teams[W2.side].filter(X => X.hp > 0).length} sur ${S.teams[W2.side].length} encore debout)` : ''}.</div>
       <div class="ar-col row">${btn('rAgain', 'Revanche', 'go')}${btn('rPick', 'Autres créatures')}${btn('rMenu', 'Menu')}</div></div>`;
     $('#rAgain').onclick = () => battle();
-    $('#rPick').onclick = () => select(S.mode);
+    $('#rPick').onclick = () => select(S.mode);  // un nouveau draft, avec un nouveau tirage
     $('#rMenu').onclick = menu;
   }
 
@@ -765,4 +965,4 @@ export default async function (ctx) {
   menu();
 }
 
-export const _test = { damage, effect, hpMax, cpuChoice, typeOf, reach, atkOf, speedOf, STATUS, hitChance, STAGE };
+export const _test = { damage, effect, hpMax, cpuChoice, cpuNext, cpuSwitch, cpuDraft, threat, talentOf, TALENTS, typeOf, reach, atkOf, speedOf, STATUS, hitChance, STAGE };

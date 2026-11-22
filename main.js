@@ -37,7 +37,7 @@ module.exports = ({ ipcMain, protocol, serveFile, readDoc, writeDoc }) => {
   ipcMain.handle('roster', () => roster());
   ipcMain.handle('records', () => readDoc('palmares') || {});
   ipcMain.handle('studio', () => ({ musics: musics(), items: items(), prefs: readDoc('reglages') || {} }));
-  ipcMain.handle('prefs', async (_e, p) => { const o = { ...(readDoc('reglages') || {}), music: String(p?.music ?? '').slice(0, 80) }; await writeDoc('reglages', o); return o; });
+  ipcMain.handle('prefs', async (_e, p) => { const o = { ...(readDoc('reglages') || {}) }; if (p?.music !== undefined) o.music = String(p.music).slice(0, 80); if (p?.team !== undefined) o.team = [3, 9].includes(+p.team) ? +p.team : 1; /* 9 : le Draft */ await writeDoc('reglages', o); return o; });
   ipcMain.handle('result', async (_e, r) => {  // r = { winner: {slug, form}, loser: {slug, form} }
     const p = readDoc('palmares') || {};
     for (const [who, field] of [[r?.winner, 'v'], [r?.loser, 'd']]) {

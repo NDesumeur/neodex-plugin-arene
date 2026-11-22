@@ -1,9 +1,9 @@
 {
   "id": "neodex.arene",
   "name": "NeoBestiary Arène",
-  "version": "1.5.8",
+  "version": "1.6.0",
   "author": "NDesumeur",
-  "description": "Combats au tour par tour entre les créatures de NeoBestiary Studio, contre l'ordinateur ou à deux sur le même PC. Chaque créature a 2 à 4 attaques tirées de 204 techniques : statuts (brûlure, poison, gel, sommeil, paralysie…), crans de statistiques, précision, coups multiples, vol de vie, soins et renforts, avec une table des types de ×4 à ×¼. Garde, variantes de couleur, palmarès, et NeoMe avec ses attaques signature.",
+  "description": "Combats au tour par tour entre les créatures de NeoBestiary Studio, contre l'ordinateur ou à deux sur le même PC. Chaque créature a 2 à 4 attaques tirées de 204 techniques : statuts (brûlure, poison, gel, sommeil, paralysie…), crans de statistiques, précision, coups multiples, vol de vie, soins et renforts, avec une table des types de ×4 à ×¼. Garde, variantes de couleur, palmarès, et NeoMe avec ses attaques signature. Nouveau : les équipes de 3, avec des changements en cours de combat (l'ordinateur sait aussi changer quand il est en danger). Chaque créature a un talent passif (Rage, Carapace, Éclaireur, Régénération…), et le mode Draft fait choisir 3 créatures à tour de rôle parmi 9. Les coups se voient et s'entendent : un son par geste et par élément, la cible recule et blanchit sous le coup, la garde fait s'accroupir, les statuts se voient sur le corps (brûlure, gel, poison, sommeil), et les attaques épiques ou légendaires ont leur mise en scène.",
   "icon": "icon.png",
   "entry": "index.js",
   "view": "arene",

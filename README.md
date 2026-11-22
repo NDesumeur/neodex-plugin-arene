@@ -17,6 +17,7 @@ Les créatures que tu as inventées dans **NeoBestiary Studio** s'affrontent au 
 - **Se mettre en garde** : le prochain coup reçu fait moitié moins de dégâts.
 - **Soin** : rend des PV, et certains soins guérissent aussi les statuts. **Renfort** : monte une ou deux statistiques.
 - **Échap** revient au menu.
+- **Les coups se voient et s'entendent** : chaque attaque a son son (d'après son geste et son élément), la cible recule et blanchit sous le coup, plus fort pour un coup critique ou très efficace. En garde, la créature s'accroupit. Les statuts se voient sur le corps : la brûlure clignote en orange, le gel bleuit et ralentit, le poison verdit, le sommeil ferme les yeux et fait respirer lentement, avec des « z ». Une attaque **épique ou légendaire** fige l'image un instant, assombrit l'arène et zoome sur le lanceur.
 
 ## Ce que fait chaque attaque
 
@@ -78,3 +79,15 @@ L'Arène a un volet système (accès complet) pour lire le dossier des créature
 ## Installer
 
 Dans NeoDex : **NeoStore → À découvrir → NeoBestiary Arène → Installer**.
+
+## Les équipes de 3
+
+Dans le menu, « Format : Équipes de 3 » fait choisir trois créatures à chaque camp. En combat, le bouton « Changer » fait entrer une créature de la réserve : elle prend le tour, et celle qui sort perd ses crans de statistiques. Après un K.O., on choisit qui la remplace ; le combat se finit quand un camp n'a plus personne debout. L'ordinateur change quand l'adversaire est très efficace contre sa créature, et fait entrer celle qui le craint le moins.
+
+## Les talents
+
+Chaque créature a un talent passif : celui de sa fiche du Studio s'il y en a un, sinon il vient de sa meilleure statistique et de son type. Rage (plus fort sous le quart des PV), Carapace (moins de dégâts au-dessus de la moitié des PV), Éclaireur (vitesse +1 en entrant), Régénération (1/16 des PV par tour), Chanceux (deux fois plus de critiques), Épines (l'attaquant au contact perd 1/8 des dégâts), Intimidation (attaque de l'adversaire -1 à l'entrée) et Esprit clair (ni sommeil ni confusion). Le talent s'affiche sur la fiche et dans la barre de vie.
+
+## Le Draft
+
+« Format : Draft » tire 9 créatures au sort. Chaque camp en prend 3 à tour de rôle (1, 2, 2, 1), contre l'ordinateur ou à deux, puis le combat en équipes de 3 commence.

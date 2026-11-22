@@ -17,6 +17,7 @@ The creatures you invented in **NeoBestiary Studio** fight turn by turn. Pick yo
 - **Guard**: the next hit taken does half damage.
 - **Heal**: restores HP, and some heals also cure statuses. **Boost**: raises one or two stats.
 - **Escape** goes back to the menu.
+- **Hits are seen and heard**: each move has its own sound (from its type and element), the target recoils and flashes white, more for a critical or very effective hit. On guard, the creature crouches. Statuses show on the body: burn flashes orange, freeze turns it blue and slows it, poison turns it green, sleep closes its eyes and makes it breathe slowly, with « z ». An **epic or legendary** move freezes the picture for a moment, darkens the arena and zooms on the attacker.
 
 ## What each move does
 
@@ -78,3 +79,15 @@ The Arena has a system part (full access) to read the Studio's creature folder i
 ## Install
 
 In NeoDex: **NeoStore → Discover → NeoBestiary Arène → Install**.
+
+## Teams of 3
+
+In the menu, « Format: Teams of 3 » lets each side pick three creatures. In a fight, the « Switch » button sends in a creature from the reserve: it takes the turn, and the one leaving loses its stat stages. After a K.O., you choose who replaces it; the fight ends when a side has nobody left standing. The computer switches when the opponent is very effective against its creature, and sends in the one that fears it least.
+
+## Talents
+
+Each creature has a passive talent: the one on its Studio card if it has one, otherwise it comes from its best stat and its type. Rage (stronger below a quarter of its HP), Shell (less damage above half its HP), Scout (speed +1 on entering), Regeneration (1/16 of its HP each turn), Lucky (twice as many crits), Thorns (a melee attacker loses 1/8 of the damage), Intimidation (opponent's attack -1 on entering) and Clear mind (no sleep, no confusion). The talent shows on the card and in the health bar.
+
+## Draft
+
+« Format: Draft » draws 9 random creatures. Each side takes 3 in turn (1, 2, 2, 1), against the computer or two players, then the teams-of-3 fight begins.
