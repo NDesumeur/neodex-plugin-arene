@@ -136,6 +136,9 @@ export default async function (ctx) {
   view.innerHTML = HTML;
   const $ = s => view.querySelector(s), $$ = s => [...view.querySelectorAll(s)];
   const call = (n, ...a) => ctx.neo.pluginMain(ID, n, ...a);
+  // les trophées de NeoDex (3.4.8 et plus) : succès et records déclarés dans plugin.json ; sur un NeoDex plus ancien, rien ne se passe
+  const trophy = id => { ctx.games?.unlock(id).catch(() => {}); };
+  const trophyRecord = (id, v) => { if (v != null && Number.isFinite(+v)) ctx.games?.record(id, +v).catch(() => {}); };
   const cv = $('#cv'), g = cv.getContext('2d'), ui = $('#ui');
   g.imageSmoothingEnabled = false;
 
@@ -927,10 +930,17 @@ export default async function (ctx) {
     await sleep(animMs(T, 'ko') + 500);
     T.alpha = 0; hud();
     const w = { slug: winner.m.slug, form: winner.f.id }, l = { slug: T.m.slug, form: T.f.id };
-    call('result', { winner: w, loser: l }).then(r => { S.records = r; }).catch(() => {});
+    call('result', { winner: w, loser: l }).then(r => { S.records = r; arTrophies(); }).catch(() => {});
     if (last) result(winner);
   }
+  // les trophées, tirés des statistiques et des records gardés (aussi à l'ouverture : ce qui a été fait avant compte)
+  function arTrophies(W2) {  // W2 : le vainqueur du combat qui vient de finir ; sans lui, seul le palmarès compte
+    if (W2) { trophy('combat'); if (S.mode === 'duel') trophy('duel'); else if (W2.side === 0) trophy('victoire'); }
+    const v = Object.values(S.records || {}).map(r => r.v || 0), top = Math.max(0, ...v), all = v.reduce((a, b) => a + b, 0);
+    trophyRecord('champion', top || null); if (top >= 10) trophy('champion'); if (all >= 100) trophy('cent');
+  }
   function result(W2) {
+    arTrophies(W2);
     S.screen = 'result'; stopMusic();
     const who = S.mode === 'duel' ? `Joueur ${W2.side + 1} gagne !` : W2.side === 0 ? 'Victoire !' : 'Défaite…';
     const portrait = W2.m.portrait ? `<img class="ar-portrait big" src="${lib(W2.m, W2.f.dossier + 'portrait.png')}" alt="">` : '';
